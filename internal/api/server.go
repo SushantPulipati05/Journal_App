@@ -22,16 +22,25 @@ type Server struct {
 func NewServer(pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	return &Server{
 		pool:    pool,
-		queries: db.New(pool), // sqlc's generated constructor
+		queries: db.New(pool),
 		logger:  logger,
 	}
 }
 
-// Routes wires URLs to handler methods.
+// Routes wires URLs to handler methods, wrapped in middleware.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
+
 	mux.HandleFunc("GET /healthz", s.handleHealth)
-	return mux
+
+	mux.HandleFunc("POST /entries", s.requireUser(s.handleCreateEntry))
+	mux.HandleFunc("GET /entries", s.requireUser(s.handleListEntries))
+	mux.HandleFunc("GET /entries/{id}", s.requireUser(s.handleGetEntry))
+	mux.HandleFunc("PUT /entries/{id}", s.requireUser(s.handleUpdateEntry))
+	mux.HandleFunc("DELETE /entries/{id}", s.requireUser(s.handleDeleteEntry))
+
+	// Outermost first: recover from panics, then log every request.
+	return s.recoverPanic(s.logRequests(mux))
 }
 
 // GET /healthz — is the server up, and can it reach the database?

@@ -15,7 +15,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		Env:         getEnv("APP_ENV", "development"),
-		Port:        getEnv("PORT", "8080"),
+		Port:        getEnv("PORT", "9090"),
 		DatabaseURL: os.Getenv("DATABASE_URL"),
 	}
 	if cfg.DatabaseURL == "" {

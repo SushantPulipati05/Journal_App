@@ -1,0 +1,51 @@
+@base = http://localhost:9090
+@user = 378782e3-e3de-4fdd-b0c7-de7a4dc71e30
+
+### Create an entry
+POST {{base}}/entries
+X-User-ID: {{user}}
+Content-Type: application/json
+
+{"title": "Day 1", "body": "Built my first real Go API."}
+
+### List entries
+GET {{base}}/entries
+X-User-ID: {{user}}
+
+### Get one entry (paste an id from the list)
+GET {{base}}/entries/PASTE-ENTRY-ID
+X-User-ID: {{user}}
+
+### Update it
+PUT {{base}}/entries/PASTE-ENTRY-ID
+X-User-ID: {{user}}
+Content-Type: application/json
+
+{"title": "Day 1 (edited)", "body": "Built my first real Go API, with sqlc."}
+
+### Delete it
+DELETE {{base}}/entries/PASTE-ENTRY-ID
+X-User-ID: {{user}}
+
+### --- These should FAIL ---
+
+### No user header → 401
+GET {{base}}/entries
+
+### Empty entry → 422
+POST {{base}}/entries
+X-User-ID: {{user}}
+Content-Type: application/json
+
+{"title": "", "body": "   "}
+
+### Typo in field name → 400
+POST {{base}}/entries
+X-User-ID: {{user}}
+Content-Type: application/json
+
+{"titel": "oops"}
+
+### Bad id → 400
+GET {{base}}/entries/not-a-uuid
+X-User-ID: {{user}}
