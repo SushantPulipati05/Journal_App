@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/db"
 )
 
@@ -17,13 +18,15 @@ type Server struct {
 	pool    *pgxpool.Pool
 	queries *db.Queries
 	logger  *slog.Logger
+	tokens  *auth.TokenManager
 }
 
-func NewServer(pool *pgxpool.Pool, logger *slog.Logger) *Server {
+func NewServer(pool *pgxpool.Pool, logger *slog.Logger, tokens *auth.TokenManager) *Server {
 	return &Server{
 		pool:    pool,
 		queries: db.New(pool),
 		logger:  logger,
+		tokens:  tokens,
 	}
 }
 
@@ -33,6 +36,17 @@ func (s *Server) Routes() http.Handler {
 
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// Accounts and sessions (public: the caller has no token yet).
+	mux.HandleFunc("POST /auth/signup", s.handleSignup)
+	mux.HandleFunc("POST /auth/login", s.handleLogin)
+	mux.HandleFunc("POST /auth/refresh", s.handleRefresh)
+	mux.HandleFunc("POST /auth/logout", s.handleLogout)
+
+	// The signed-in user's own account.
+	mux.HandleFunc("GET /me", s.requireUser(s.handleMe))
+	mux.HandleFunc("DELETE /me", s.requireUser(s.handleDeleteMe))
+
+	// Journal entries.
 	mux.HandleFunc("POST /entries", s.requireUser(s.handleCreateEntry))
 	mux.HandleFunc("GET /entries", s.requireUser(s.handleListEntries))
 	mux.HandleFunc("GET /entries/{id}", s.requireUser(s.handleGetEntry))

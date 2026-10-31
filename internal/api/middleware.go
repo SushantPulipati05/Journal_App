@@ -2,22 +2,32 @@ package api
 
 import (
 	"net/http"
+	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
-// requireUser identifies the caller and stores their ID in the request context.
-// TEMPORARY (Day 1): trusts an X-User-ID header. Day 2 replaces this with JWT auth.
+// requireUser checks the "Authorization: Bearer <access token>" header and
+// stores the caller's ID in the request context. The ID comes from the
+// signed token, so a client can't pretend to be someone else.
 func (s *Server) requireUser(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := uuid.Parse(r.Header.Get("X-User-ID"))
+		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" {
+			unauthorized(w, "missing or malformed Authorization header")
+			return
+		}
+		id, err := s.tokens.ParseAccessToken(strings.TrimSpace(token))
 		if err != nil {
-			writeError(w, http.StatusUnauthorized, "missing or invalid X-User-ID header")
+			unauthorized(w, "invalid or expired token")
 			return
 		}
 		next(w, r.WithContext(withUserID(r.Context(), id)))
 	}
+}
+
+func unauthorized(w http.ResponseWriter, message string) {
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	writeError(w, http.StatusUnauthorized, message)
 }
 
 // statusRecorder remembers the status code a handler sent, for logging.

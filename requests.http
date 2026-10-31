@@ -1,51 +1,111 @@
 @base = http://localhost:9090
-@user = 378782e3-e3de-4fdd-b0c7-de7a4dc71e30
+
+### NOTE: run 'Log in' (in the AUTH section below) first; entries use its token.
 
 ### Create an entry
 POST {{base}}/entries
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
 {"title": "Day 1", "body": "Built my first real Go API."}
 
 ### List entries
 GET {{base}}/entries
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Get one entry (paste an id from the list)
 GET {{base}}/entries/PASTE-ENTRY-ID
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### Update it
 PUT {{base}}/entries/PASTE-ENTRY-ID
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
 {"title": "Day 1 (edited)", "body": "Built my first real Go API, with sqlc."}
 
 ### Delete it
 DELETE {{base}}/entries/PASTE-ENTRY-ID
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 
 ### --- These should FAIL ---
 
-### No user header → 401
+### No token → 401
 GET {{base}}/entries
 
 ### Empty entry → 422
 POST {{base}}/entries
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
 {"title": "", "body": "   "}
 
 ### Typo in field name → 400
 POST {{base}}/entries
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
 Content-Type: application/json
 
 {"titel": "oops"}
 
 ### Bad id → 400
 GET {{base}}/entries/not-a-uuid
-X-User-ID: {{user}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+### ===== AUTH (Day 2) =====
+
+### Sign up
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"Sushant@example.com","password":"correct-horse-battery","display_name":"Sushant"}
+
+### Log in
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"correct-horse-battery"}
+
+### Refresh (paste the refresh_token from the login response). Run it TWICE:
+### the second call must return 401 (reuse detection).
+POST {{base}}/auth/refresh
+Content-Type: application/json
+
+{"refresh_token":"PASTE-REFRESH-TOKEN"}
+
+### Log out
+POST {{base}}/auth/logout
+Content-Type: application/json
+
+{"refresh_token":"PASTE-REFRESH-TOKEN"}
+
+### Wrong password -> 401
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"wrong-password-here"}
+
+### Duplicate signup -> 409
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"correct-horse-battery"}
+
+### Weak password -> 422
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"new@example.com","password":"short"}
+
+
+### Who am I (needs a token)
+GET {{base}}/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Forged token -> 401
+GET {{base}}/me
+Authorization: Bearer not.a.real.token
+
+### Delete my account (permanent!)
+DELETE {{base}}/me
+Authorization: Bearer {{login.response.body.access_token}}

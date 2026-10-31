@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/SushantPulipati05/journal-server/internal/api"
+	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/config"
 )
 
@@ -54,9 +56,14 @@ func run() error {
 	}
 	logger.Info("connected to database")
 
+	tokens, err := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
+	if err != nil {
+		return fmt.Errorf("token manager: %w", err)
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(pool, logger).Routes(),
+		Handler:           api.NewServer(pool, logger, tokens).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

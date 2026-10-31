@@ -12,6 +12,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
+	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/migrations"
 )
 
@@ -75,9 +77,19 @@ func migrate(ctx context.Context, url string) error {
 
 // ---------- helpers ----------
 
+// testTokens signs and checks tokens for every test, so tests can mint a real
+// access token for any user.
+var testTokens = func() *auth.TokenManager {
+	tm, err := auth.NewTokenManager("test-secret-test-secret-test-secret-123", 15*time.Minute)
+	if err != nil {
+		panic(err)
+	}
+	return tm
+}()
+
 func newTestHandler() http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // silence logs in tests
-	return NewServer(testPool, logger).Routes()
+	return NewServer(testPool, logger, testTokens).Routes()
 }
 
 // createUser inserts a fresh user so every test gets its own isolated data.
@@ -99,7 +111,11 @@ func do(t *testing.T, h http.Handler, method, path string, userID uuid.UUID, bod
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	if userID != uuid.Nil {
-		req.Header.Set("X-User-ID", userID.String())
+		token, _, err := testTokens.IssueAccessToken(userID)
+		if err != nil {
+			t.Fatalf("issue token: %v", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 	if body != "" {
 		req.Header.Set("Content-Type", "application/json")
