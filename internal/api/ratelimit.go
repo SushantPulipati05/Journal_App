@@ -101,19 +101,27 @@ func (s *Server) rateLimit(next http.HandlerFunc) http.HandlerFunc {
 
 // clientIP works out who is calling.
 //
-// Normally that's the TCP peer. Behind a load balancer (Fly.io, Cloud Run)
-// the peer is the balancer itself, so every user would share one bucket. In
-// that case, with trustProxy on, we read X-Forwarded-For. We take the LAST
-// entry: that's the one our own proxy appended. Earlier entries are written
-// by the client and can be forged to dodge the limit. Only turn trustProxy on
-// when a proxy really sits in front, or anyone could spoof the header.
+// Normally that's the TCP peer. Behind a load balancer (Railway, Fly.io,
+// Cloud Run) the peer is the balancer itself, so every user would share one
+// bucket. With trustProxy on, we read headers the proxy sets instead:
+//
+//  1. X-Real-IP. Railway's public edge overwrites it with the real client
+//     IP, and a client can't forge it through the edge. Railway recommends it
+//     for rate limiting.
+//  2. Otherwise the LAST X-Forwarded-For entry (the one our own proxy
+//     appended). Earlier entries are written by the client and can be forged.
+//
+// Only turn trustProxy on when a proxy really sits in front, or anyone could
+// spoof these headers and dodge the limit.
 //
 // IPv6 clients are grouped by /64, because one person usually controls a
 // whole /64 and could otherwise pick a fresh address for every request.
 func clientIP(r *http.Request, trustProxy bool) string {
 	raw := ""
 	if trustProxy {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); real != "" {
+			raw = real
+		} else if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")
 			raw = strings.TrimSpace(parts[len(parts)-1])
 		}

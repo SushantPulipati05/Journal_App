@@ -80,6 +80,33 @@ func TestForwardedForUsedBehindTrustedProxy(t *testing.T) {
 	expectStatus(t, loginFrom(h, proxy, "1.2.3.4, 198.51.100.1"), http.StatusTooManyRequests)
 }
 
+func TestRealIPPreferredBehindTrustedProxy(t *testing.T) {
+	h := strictHandler(true)
+	proxy := "10.1.1.1:5000"
+
+	login := func(realIP, xff string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", "/auth/login",
+			strings.NewReader(`{"email":"nobody@test.local","password":"whatever-password"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = proxy
+		req.Header.Set("X-Real-IP", realIP)
+		if xff != "" {
+			req.Header.Set("X-Forwarded-For", xff)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// X-Forwarded-For here ends in a proxy address shared by everyone (as it
+	// does on Railway); X-Real-IP is what tells users apart.
+	for i := 0; i < 3; i++ {
+		expectStatus(t, login("198.51.100.1", "198.51.100.1, 100.64.0.7"), http.StatusUnauthorized)
+	}
+	expectStatus(t, login("198.51.100.1", "198.51.100.1, 100.64.0.7"), http.StatusTooManyRequests)
+	expectStatus(t, login("198.51.100.2", "198.51.100.2, 100.64.0.7"), http.StatusUnauthorized)
+}
+
 func TestClientIPGroupsIPv6(t *testing.T) {
 	mk := func(addr string) *http.Request {
 		r := httptest.NewRequest("GET", "/", nil)
