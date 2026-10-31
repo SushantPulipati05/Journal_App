@@ -13,6 +13,10 @@ type Config struct {
 	DatabaseURL    string
 	JWTSecret      string
 	AccessTokenTTL time.Duration
+
+	// TrustProxy: set TRUST_PROXY=true only when running behind a load
+	// balancer that sets X-Forwarded-For (Fly.io, Cloud Run).
+	TrustProxy bool
 }
 
 func Load() (Config, error) {
@@ -22,6 +26,7 @@ func Load() (Config, error) {
 		DatabaseURL:    os.Getenv("DATABASE_URL"),
 		JWTSecret:      os.Getenv("JWT_SECRET"),
 		AccessTokenTTL: 15 * time.Minute,
+		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
@@ -31,7 +36,6 @@ func Load() (Config, error) {
 	}
 	return cfg, nil
 }
-
 
 // getEnv returns the variable's value, or fallback if it's unset.
 func getEnv(key, fallback string) string {

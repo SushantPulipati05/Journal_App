@@ -19,6 +19,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"golang.org/x/time/rate"
 
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/migrations"
@@ -89,7 +90,11 @@ var testTokens = func() *auth.TokenManager {
 
 func newTestHandler() http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // silence logs in tests
-	return NewServer(testPool, logger, testTokens).Routes()
+	srv := NewServer(testPool, logger, testTokens, false)
+	// Most tests make many signups/logins from one fake IP, so give them a
+	// huge budget. The rate-limit tests build their own strict server.
+	srv.authLimiter = newIPLimiter(rate.Inf, 1_000_000, false)
+	return srv.Routes()
 }
 
 // createUser inserts a fresh user so every test gets its own isolated data.
