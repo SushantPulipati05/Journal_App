@@ -17,6 +17,10 @@ type Config struct {
 	// TrustProxy: set TRUST_PROXY=true only when running behind a load
 	// balancer that sets X-Forwarded-For (Fly.io, Cloud Run).
 	TrustProxy bool
+
+	// RunMigrations: set RUN_MIGRATIONS=true to apply pending database
+	// migrations every time the server starts (used in production).
+	RunMigrations bool
 }
 
 func Load() (Config, error) {
@@ -27,6 +31,7 @@ func Load() (Config, error) {
 		JWTSecret:      os.Getenv("JWT_SECRET"),
 		AccessTokenTTL: 15 * time.Minute,
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
+		RunMigrations:  os.Getenv("RUN_MIGRATIONS") == "true",
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

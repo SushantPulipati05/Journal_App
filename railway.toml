@@ -3,9 +3,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Runs before each new version starts. If it fails, the deploy is cancelled
-# and the old version keeps serving, so a broken migration never goes live.
-preDeployCommand = ["/migrate up"]
+# Database migrations run inside the server at startup (RUN_MIGRATIONS=true).
 
 # Railway only sends traffic to the new version once this returns 200.
 healthcheckPath = "/healthz"

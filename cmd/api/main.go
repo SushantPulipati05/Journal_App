@@ -16,6 +16,7 @@ import (
 	"github.com/SushantPulipati05/journal-server/internal/api"
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/config"
+	"github.com/SushantPulipati05/journal-server/internal/dbmigrate"
 )
 
 func main() {
@@ -55,6 +56,14 @@ func run() error {
 		return err
 	}
 	logger.Info("connected to database")
+
+	if cfg.RunMigrations {
+		logger.Info("applying database migrations")
+		if err := dbmigrate.Up(ctx, cfg.DatabaseURL); err != nil {
+			return fmt.Errorf("migrations: %w", err)
+		}
+		logger.Info("database is up to date")
+	}
 
 	tokens, err := auth.NewTokenManager(cfg.JWTSecret, cfg.AccessTokenTTL)
 	if err != nil {
