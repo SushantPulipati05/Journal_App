@@ -11,6 +11,7 @@ import dev.sushnt.journal.data.SqliteTokenStore
 import dev.sushnt.journal.data.SyncEngine
 import dev.sushnt.journal.ui.AuthViewModel
 import dev.sushnt.journal.ui.EntriesViewModel
+import dev.sushnt.journal.ui.SettingsViewModel
 import org.koin.core.context.startKoin
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
@@ -28,13 +29,15 @@ fun initKoin(config: PlatformConfig) {
 }
 
 private fun appModule(config: PlatformConfig) = module {
+    single { config.backgroundSync }
     single { SqliteTokenStore.open(BundledSQLiteDriver(), "${config.dataDir}/session.db") }
     single<TokenStore> { get<SqliteTokenStore>() }
     single { EntryStore.open(BundledSQLiteDriver(), "${config.dataDir}/journal.db") }
     single { JournalApi(ApiConfig.BASE_URL, get()) }
     single { SyncEngine(get(), get()) }
-    single { SessionManager(get(), get(), get(), get()) }
+    single { SessionManager(get(), get(), get(), get(), get()) }
 
     viewModel { AuthViewModel(get()) }
-    viewModel { EntriesViewModel(get(), get(), get()) }
+    viewModel { EntriesViewModel(get(), get()) }
+    viewModel { SettingsViewModel(get(), get()) }
 }

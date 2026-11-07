@@ -11,15 +11,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import dev.sushnt.journal.data.BackgroundSync
 import dev.sushnt.journal.data.SessionManager
 import dev.sushnt.journal.ui.AuthScreen
 import dev.sushnt.journal.ui.EditorScreen
 import dev.sushnt.journal.ui.EntriesScreen
 import dev.sushnt.journal.ui.EntriesViewModel
+import dev.sushnt.journal.ui.SettingsScreen
+import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.minutes
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 private const val NEW_ENTRY = "__new__"
+private const val SETTINGS = "__settings__"
 
 /** The whole app. Every platform shows this. initKoin() must have run first. */
 @Composable
@@ -39,12 +46,23 @@ fun App() {
 
 @Composable
 private fun Journal(vm: EntriesViewModel = koinViewModel()) {
-    // Which entry is open: null = the list, NEW_ENTRY = a new one, else an entry id.
+    // What's open: null = the list, NEW_ENTRY = a new entry, SETTINGS, or an entry id.
     // rememberSaveable keeps it when an Android phone rotates.
     var openId by rememberSaveable { mutableStateOf<String?>(null) }
     val entries by vm.entries.collectAsState()
+    val backgroundSync = koinInject<BackgroundSync>()
 
-    LaunchedEffect(Unit) { vm.syncNow() } // sync each time the journal appears
+    LaunchedEffect(Unit) {
+        backgroundSync.schedulePeriodic() // hourly sync while the app is closed (Android)
+        while (true) {                    // and every 5 minutes while it is open
+            vm.syncNow()
+            delay(5.minutes)
+        }
+    }
+    // Coming back to the app: fetch what other devices changed.
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.syncNow() }
+    // Leaving the app: make sure edits reach the server even if we're offline right now.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { backgroundSync.syncSoon() }
 
     val id = openId
     if (id == null) {
@@ -52,7 +70,12 @@ private fun Journal(vm: EntriesViewModel = koinViewModel()) {
             vm = vm,
             onOpen = { openId = it.id },
             onNew = { openId = NEW_ENTRY },
+            onSettings = { openId = SETTINGS },
         )
+        return
+    }
+    if (id == SETTINGS) {
+        SettingsScreen(onClose = { openId = null })
         return
     }
 

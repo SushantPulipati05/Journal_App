@@ -44,6 +44,7 @@ kotlin {
             implementation(libs.compose.uiTooling)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.activity.compose) // system back button
+            implementation(libs.androidx.work.runtime)     // background sync
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
@@ -68,6 +69,7 @@ kotlin {
             implementation(libs.ktor.serialization.kotlinxJson)
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.kotlinx.datetime)
 
             // Local database (SQLite on every platform)
             implementation(libs.androidx.sqlite)

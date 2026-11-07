@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalTime::class)
+@file:OptIn(ExperimentalMaterial3Api::class)
 
 package dev.sushnt.journal.ui
 
@@ -14,12 +14,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,19 +33,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.sushnt.journal.data.Entry
-import kotlin.time.ExperimentalTime
-import kotlin.time.Instant
 
 @Composable
 fun EntriesScreen(
     vm: EntriesViewModel,
     onOpen: (Entry) -> Unit,
     onNew: () -> Unit,
+    onSettings: () -> Unit,
 ) {
-    val entries by vm.entries.collectAsState()
+    val entries by vm.visibleEntries.collectAsState()
+    val allEntries by vm.entries.collectAsState()
+    val query by vm.query.collectAsState()
     val syncing by vm.syncing.collectAsState()
     val message by vm.message.collectAsState()
-    val confirm by vm.confirmSignOut.collectAsState()
 
     Scaffold(
         topBar = {
@@ -53,7 +53,7 @@ fun EntriesScreen(
                 title = { Text("Journal") },
                 actions = {
                     TextButton(onClick = vm::syncNow, enabled = !syncing) { Text("Sync") }
-                    TextButton(onClick = vm::requestSignOut) { Text("Sign out") }
+                    TextButton(onClick = onSettings) { Text("Settings") }
                 },
             )
         },
@@ -71,10 +71,23 @@ fun EntriesScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
+            if (allEntries.isNotEmpty()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = vm::setQuery,
+                    placeholder = { Text("Search") },
+                    singleLine = true,
+                    trailingIcon = {
+                        if (query.isNotEmpty()) TextButton(onClick = { vm.setQuery("") }) { Text("Clear") }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             if (entries.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        "No entries yet.\nTap \"New entry\" to write your first one.",
+                        if (allEntries.isEmpty()) "No entries yet.\nTap \"New entry\" to write your first one."
+                        else "No entries match \"$query\".",
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -91,18 +104,6 @@ fun EntriesScreen(
                 }
             }
         }
-    }
-
-    confirm?.let { count ->
-        AlertDialog(
-            onDismissRequest = vm::cancelSignOut,
-            title = { Text("Sign out?") },
-            text = {
-                Text("$count change(s) haven't reached the server yet and will be lost if you sign out now.")
-            },
-            confirmButton = { TextButton(onClick = vm::confirmSignOut) { Text("Sign out anyway") } },
-            dismissButton = { TextButton(onClick = vm::cancelSignOut) { Text("Cancel") } },
-        )
     }
 }
 
@@ -127,14 +128,10 @@ private fun EntryCard(entry: Entry, onClick: () -> Unit) {
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                formatDate(entry.createdAt) + if (entry.dirty) "  ·  not synced yet" else "",
+                formatEntryDate(entry.createdAt) + if (entry.dirty) "  ·  not synced yet" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
 }
-
-/** "2026-11-07" (UTC for now; local time zones come later). */
-private fun formatDate(epochMillis: Long): String =
-    Instant.fromEpochMilliseconds(epochMillis).toString().take(10)

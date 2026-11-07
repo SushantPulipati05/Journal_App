@@ -5,12 +5,12 @@ import androidx.lifecycle.viewModelScope
 import dev.sushnt.journal.api.ApiError
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
-import dev.sushnt.journal.data.SessionManager
 import dev.sushnt.journal.data.SyncEngine
 import dev.sushnt.journal.data.SyncResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -21,13 +21,25 @@ const val MAX_TITLE = 200
 class EntriesViewModel(
     private val store: EntryStore,
     private val sync: SyncEngine,
-    private val session: SessionManager,
 ) : ViewModel() {
 
-    /** Reloads by itself whenever anything in the database changes (local edit or sync). */
+    /** Every entry. Reloads by itself whenever the database changes (local edit or sync). */
     val entries: StateFlow<List<Entry>> = store.revision
         .map { store.list() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _query = MutableStateFlow("")
+    val query: StateFlow<String> = _query
+
+    /** What the list shows: entries matching the search box (all of them when it's empty). */
+    val visibleEntries: StateFlow<List<Entry>> = combine(entries, _query) { list, q ->
+        val words = q.trim().lowercase().split(' ').filter { it.isNotEmpty() }
+        if (words.isEmpty()) list
+        else list.filter { e ->
+            val text = (e.title + " " + e.body).lowercase()
+            words.all { it in text }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing
@@ -36,11 +48,11 @@ class EntriesViewModel(
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
-    /** Non-null while asking "you have N unsynced entries, sign out anyway?". */
-    private val _confirmSignOut = MutableStateFlow<Int?>(null)
-    val confirmSignOut: StateFlow<Int?> = _confirmSignOut
-
     private var syncAgain = false
+
+    fun setQuery(q: String) {
+        _query.value = q
+    }
 
     /** Starts a sync. If one is running, another runs right after it, so no change is missed. */
     fun syncNow() {
@@ -86,23 +98,5 @@ class EntriesViewModel(
         viewModelScope.launch {
             if (store.delete(id)) syncNow()
         }
-    }
-
-    fun requestSignOut() {
-        viewModelScope.launch {
-            // Give unsent changes one last chance to reach the server.
-            sync.sync()
-            val unsynced = session.unsyncedCount()
-            if (unsynced == 0) session.logout() else _confirmSignOut.value = unsynced
-        }
-    }
-
-    fun confirmSignOut() {
-        _confirmSignOut.value = null
-        viewModelScope.launch { session.logout() }
-    }
-
-    fun cancelSignOut() {
-        _confirmSignOut.value = null
     }
 }

@@ -2,6 +2,7 @@ package dev.sushnt.journal.data
 
 import dev.sushnt.journal.api.ApiResult
 import dev.sushnt.journal.api.JournalApi
+import dev.sushnt.journal.api.UserDto
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -14,6 +15,7 @@ class SessionManager(
     private val tokens: SqliteTokenStore,
     private val store: EntryStore,
     private val sync: SyncEngine,
+    private val backgroundSync: BackgroundSync,
 ) {
     // Becomes true only after sign-in has fully finished (including the
     // "is this the same account as before?" check), so the list never flashes
@@ -36,6 +38,24 @@ class SessionManager(
     suspend fun logout() {
         ready.value = false
         api.logout()
+        forgetLocalData()
+    }
+
+    /** Name and email of the signed-in account. */
+    suspend fun profile(): ApiResult<UserDto> = api.me()
+
+    /** Deletes the account on the server (all devices), then everything on this device. */
+    suspend fun deleteAccount(): ApiResult<Unit> {
+        val result = api.deleteAccount()
+        if (result is ApiResult.Ok) {
+            ready.value = false
+            forgetLocalData()
+        }
+        return result
+    }
+
+    private suspend fun forgetLocalData() {
+        backgroundSync.cancel()
         store.clear()
         tokens.setLastUserId(null)
     }
