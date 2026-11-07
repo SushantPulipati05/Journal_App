@@ -23,6 +23,9 @@ type Server struct {
 
 	// authLimiter slows down password guessing on the public auth endpoints.
 	authLimiter *ipLimiter
+
+	// google verifies "Sign in with Google" tokens. nil = Google sign-in is off.
+	google auth.GoogleVerifier
 }
 
 // trustProxy should be true only when the server runs behind a load balancer
@@ -39,6 +42,12 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, tokens *auth.TokenManage
 	}
 }
 
+// WithGoogle turns on POST /auth/google.
+func (s *Server) WithGoogle(v auth.GoogleVerifier) *Server {
+	s.google = v
+	return s
+}
+
 // Routes wires URLs to handler methods, wrapped in middleware.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -49,6 +58,7 @@ func (s *Server) Routes() http.Handler {
 	// are rate limited per IP. Logout isn't: it needs a valid refresh token.
 	mux.HandleFunc("POST /auth/signup", s.rateLimit(s.handleSignup))
 	mux.HandleFunc("POST /auth/login", s.rateLimit(s.handleLogin))
+	mux.HandleFunc("POST /auth/google", s.rateLimit(s.handleGoogle))
 	mux.HandleFunc("POST /auth/refresh", s.rateLimit(s.handleRefresh))
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 

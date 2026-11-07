@@ -21,6 +21,10 @@ type Config struct {
 	// RunMigrations: set RUN_MIGRATIONS=true to apply pending database
 	// migrations every time the server starts (used in production).
 	RunMigrations bool
+
+	// GoogleClientID: the "Web application" OAuth client ID from Google Cloud
+	// Console. Empty = Google sign-in is turned off.
+	GoogleClientID string
 }
 
 func Load() (Config, error) {
@@ -32,6 +36,7 @@ func Load() (Config, error) {
 		AccessTokenTTL: 15 * time.Minute,
 		TrustProxy:     os.Getenv("TRUST_PROXY") == "true",
 		RunMigrations:  os.Getenv("RUN_MIGRATIONS") == "true",
+		GoogleClientID: os.Getenv("GOOGLE_CLIENT_ID"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

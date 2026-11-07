@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -24,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import org.koin.compose.viewmodel.koinViewModel
 
 @Composable
@@ -39,6 +42,8 @@ fun AuthScreen(vm: AuthViewModel = koinViewModel()) {
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
+    val google = rememberGoogleSignIn()
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = Modifier
@@ -107,6 +112,32 @@ fun AuthScreen(vm: AuthViewModel = koinViewModel()) {
                     Text(if (state.isSignup) "Create account" else "Sign in")
                 }
             }
+            if (google != null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "or",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            when (val r = google.requestIdToken()) {
+                                is GoogleTokenResult.Token -> vm.signInWithGoogle(r.idToken)
+                                is GoogleTokenResult.Error -> vm.showError(r.message)
+                                GoogleTokenResult.Cancelled -> {} // user closed the picker
+                            }
+                        }
+                    },
+                    enabled = !state.loading,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
+                    Text("Continue with Google")
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
             TextButton(
                 onClick = vm::toggleMode,

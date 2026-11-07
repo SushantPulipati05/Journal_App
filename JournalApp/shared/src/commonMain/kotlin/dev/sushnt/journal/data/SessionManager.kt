@@ -31,6 +31,9 @@ class SessionManager(
     suspend fun signup(email: String, password: String, displayName: String): ApiResult<Unit> =
         api.signup(email.trim(), password, displayName.trim()).also { if (it is ApiResult.Ok) afterSignIn() }
 
+    suspend fun loginWithGoogle(idToken: String): ApiResult<Unit> =
+        api.googleSignIn(idToken).also { if (it is ApiResult.Ok) afterSignIn() }
+
     /** Entries changed on this device that the server doesn't have yet. */
     suspend fun unsyncedCount(): Int = store.dirtyEntries().size
 

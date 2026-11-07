@@ -17,6 +17,9 @@ data class SignupRequest(
 data class LoginRequest(val email: String, val password: String)
 
 @Serializable
+data class GoogleSignInRequest(@SerialName("id_token") val idToken: String)
+
+@Serializable
 data class RefreshRequest(@SerialName("refresh_token") val refreshToken: String)
 
 @Serializable

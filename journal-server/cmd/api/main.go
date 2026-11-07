@@ -70,9 +70,21 @@ func run() error {
 		return fmt.Errorf("token manager: %w", err)
 	}
 
+	server := api.NewServer(pool, logger, tokens, cfg.TrustProxy)
+	if cfg.GoogleClientID != "" {
+		google, err := auth.NewGoogleVerifier(ctx, cfg.GoogleClientID)
+		if err != nil {
+			return fmt.Errorf("google verifier: %w", err)
+		}
+		server.WithGoogle(google)
+		logger.Info("google sign-in enabled")
+	} else {
+		logger.Warn("GOOGLE_CLIENT_ID not set: google sign-in is disabled")
+	}
+
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           api.NewServer(pool, logger, tokens, cfg.TrustProxy).Routes(),
+		Handler:           server.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,

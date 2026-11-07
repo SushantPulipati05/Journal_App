@@ -45,6 +45,10 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.androidx.activity.compose) // system back button
             implementation(libs.androidx.work.runtime)     // background sync
+            // Sign in with Google
+            implementation(libs.androidx.credentials)
+            implementation(libs.androidx.credentials.playServices)
+            implementation(libs.googleid)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)

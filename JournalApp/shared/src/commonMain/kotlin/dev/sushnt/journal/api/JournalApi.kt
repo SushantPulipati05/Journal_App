@@ -74,6 +74,12 @@ class JournalApi(
             plain.post("$baseUrl/auth/login") { jsonBody(LoginRequest(email, password)) }
         }
 
+    /** Signs in (or creates an account) with an ID token from Google's account picker. */
+    suspend fun googleSignIn(idToken: String): ApiResult<Unit> =
+        startSession {
+            plain.post("$baseUrl/auth/google") { jsonBody(GoogleSignInRequest(idToken)) }
+        }
+
     /** Signs out here no matter what, and tells the server on a best-effort basis. */
     suspend fun logout() {
         val tokens = tokenStore.load()

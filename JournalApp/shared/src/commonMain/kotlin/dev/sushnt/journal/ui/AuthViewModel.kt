@@ -45,17 +45,33 @@ class AuthViewModel(private val session: SessionManager) : ViewModel() {
                 session.login(email, password)
             }
             // On success the app switches to the journal by itself (SessionManager.signedIn).
-            val error = (result as? ApiResult.Err)?.error?.let(::describe)
+            val error = (result as? ApiResult.Err)?.error?.let { describe(it) }
             _state.update { it.copy(loading = false, error = error) }
         }
     }
 
-    private fun describe(error: ApiError): String = when (error) {
+    /** Called with the token from Google's account picker. */
+    fun signInWithGoogle(idToken: String) {
+        if (_state.value.loading) return
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, error = null) }
+            val result = session.loginWithGoogle(idToken)
+            val error = (result as? ApiResult.Err)?.error?.let { describe(it, google = true) }
+            _state.update { it.copy(loading = false, error = error) }
+        }
+    }
+
+    /** The picker itself failed (no account, no Play services...). */
+    fun showError(message: String) = _state.update { it.copy(error = message) }
+
+    private fun describe(error: ApiError, google: Boolean = false): String = when (error) {
         is ApiError.Network -> "Can't reach the server. Check your internet connection."
         ApiError.SessionExpired -> "Please sign in again."
         is ApiError.Server -> when (error.status) {
-            401 -> "Wrong email or password."
-            409 -> "An account with this email already exists. Try signing in."
+            401 -> if (google) "Google sign-in failed. Please try again." else "Wrong email or password."
+            409 -> if (google) error.message.replaceFirstChar { it.uppercase() } + "."
+                   else "An account with this email already exists. Try signing in."
+            503 -> "Google sign-in isn't available right now."
             429 -> "Too many attempts. Wait a minute and try again."
             400, 422 -> error.message.replaceFirstChar { it.uppercase() } + "."
             else -> "Something went wrong on the server (${error.status}). Try again."
