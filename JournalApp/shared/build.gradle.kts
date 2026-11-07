@@ -68,6 +68,10 @@ kotlin {
             implementation(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.coroutines.core)
 
+            // Local database (SQLite on every platform)
+            implementation(libs.androidx.sqlite)
+            implementation(libs.androidx.sqlite.bundled)
+
             // Dependency injection
             implementation(libs.koin.core)
             implementation(libs.koin.compose)
