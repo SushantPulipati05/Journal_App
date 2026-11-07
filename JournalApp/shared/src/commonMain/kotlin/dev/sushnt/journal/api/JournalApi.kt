@@ -6,6 +6,8 @@ import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.plugins.auth.Auth
+import io.ktor.client.plugins.auth.authProvider
+import io.ktor.client.plugins.auth.providers.BearerAuthProvider
 import io.ktor.client.plugins.auth.providers.BearerTokens
 import io.ktor.client.plugins.auth.providers.bearer
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -83,7 +85,7 @@ class JournalApi(
     /** Signs out here no matter what, and tells the server on a best-effort basis. */
     suspend fun logout() {
         val tokens = tokenStore.load()
-        tokenStore.clear()
+        forgetSession()
         if (tokens != null) {
             try {
                 plain.post("$baseUrl/auth/logout") { jsonBody(RefreshRequest(tokens.refreshToken)) }
@@ -103,7 +105,7 @@ class JournalApi(
     /** Permanently deletes the account and all its entries on the server. */
     suspend fun deleteAccount(): ApiResult<Unit> {
         val result = call(authed = true, request = { authed.delete("$baseUrl/me") }) { }
-        if (result is ApiResult.Ok) tokenStore.clear()
+        if (result is ApiResult.Ok) forgetSession()
         return result
     }
 
@@ -129,10 +131,25 @@ class JournalApi(
 
     // ---------- internals ----------
 
+    /**
+     * The Auth plugin keeps the last access token in memory. After a sign-out or
+     * a switch to another account it must forget it, or requests would still go
+     * out as the PREVIOUS user (that was a real bug).
+     */
+    private fun dropCachedToken() {
+        authed.authProvider<BearerAuthProvider>()?.clearToken()
+    }
+
+    private suspend fun forgetSession() {
+        tokenStore.clear()
+        dropCachedToken()
+    }
+
     private suspend fun startSession(request: suspend () -> HttpResponse): ApiResult<Unit> =
         when (val result = call(authed = false, request = request) { it.body<SessionDto>() }) {
             is ApiResult.Ok -> {
                 tokenStore.save(Tokens(result.value.accessToken, result.value.refreshToken))
+                dropCachedToken() // never reuse the previous account's token
                 ApiResult.Ok(Unit)
             }
             is ApiResult.Err -> result
@@ -185,7 +202,7 @@ class JournalApi(
         }
 
         if (authed && response.status == HttpStatusCode.Unauthorized) {
-            tokenStore.clear()
+            forgetSession()
             return ApiResult.Err(ApiError.SessionExpired)
         }
         return ApiResult.Err(ApiError.Server(response.status.value, errorMessage(response)))

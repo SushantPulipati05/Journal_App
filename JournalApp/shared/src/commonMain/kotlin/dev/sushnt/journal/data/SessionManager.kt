@@ -26,13 +26,20 @@ class SessionManager(
     val signedIn: Flow<Boolean> = combine(ready, tokens.signedIn) { r, t -> r && t }
 
     suspend fun login(email: String, password: String): ApiResult<Unit> =
-        api.login(email.trim(), password).also { if (it is ApiResult.Ok) afterSignIn() }
+        signIn { api.login(email.trim(), password) }
 
     suspend fun signup(email: String, password: String, displayName: String): ApiResult<Unit> =
-        api.signup(email.trim(), password, displayName.trim()).also { if (it is ApiResult.Ok) afterSignIn() }
+        signIn { api.signup(email.trim(), password, displayName.trim()) }
 
     suspend fun loginWithGoogle(idToken: String): ApiResult<Unit> =
-        api.googleSignIn(idToken).also { if (it is ApiResult.Ok) afterSignIn() }
+        signIn { api.googleSignIn(idToken) }
+
+    private suspend fun signIn(request: suspend () -> ApiResult<Unit>): ApiResult<Unit> {
+        // Hold the journal back until the account check below has finished, even if
+        // an expired session left `ready` on.
+        ready.value = false
+        return request().also { if (it is ApiResult.Ok) afterSignIn() }
+    }
 
     /** Entries changed on this device that the server doesn't have yet. */
     suspend fun unsyncedCount(): Int = store.dirtyEntries().size

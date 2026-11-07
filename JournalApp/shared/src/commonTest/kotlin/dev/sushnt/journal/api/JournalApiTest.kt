@@ -235,10 +235,10 @@ class JournalApiTest {
 
         assertIs<ApiResult.Ok<PullResponse>>(result)
         assertEquals("5", since)
-        assertEquals(7, result.value.nextCursor)
+        assertEquals(7L, result.value.nextCursor)
         assertEquals(false, result.value.hasMore)
         assertEquals("Hi", result.value.changes.single().title)
-        assertEquals(7, result.value.changes.single().version)
+        assertEquals(7L, result.value.changes.single().version)
         assertNull(result.value.changes.single().deletedAt)
     }
 
@@ -257,7 +257,7 @@ class JournalApiTest {
         assertIs<ApiResult.Ok<PushResponse>>(result)
         assertTrue(sent.contains(""""created_at":"2026-11-07T09:00:00Z""""))
         assertEquals(listOf("applied", "stale"), result.value.results.map { it.status })
-        assertEquals(8, result.value.results.first().version)
+        assertEquals(8L, result.value.results.first().version)
     }
 
     @Test
@@ -270,5 +270,31 @@ class JournalApiTest {
 
         assertIs<ApiResult.Ok<Unit>>(result)
         assertNull(store.load())
+    }
+
+    @Test
+    fun switchingAccountsNeverSendsThePreviousUsersToken() = runTest {
+        val seenAuth = mutableListOf<String?>()
+        val engine = MockEngine { request ->
+            when (request.url.encodedPath) {
+                "/auth/login" ->
+                    if (request.bodyText().contains("a@x.y")) jsonResponse(session("A_TOKEN", "A_R"))
+                    else jsonResponse(session("B_TOKEN", "B_R"))
+                "/auth/logout" -> respond("", HttpStatusCode.NoContent)
+                else -> {
+                    seenAuth += request.headers[HttpHeaders.Authorization]
+                    jsonResponse(USER_JSON)
+                }
+            }
+        }
+        val api = JournalApi(BASE, InMemoryTokenStore(), engine)
+
+        api.login("a@x.y", "password-a")
+        api.me()
+        api.logout()
+        api.login("b@x.y", "password-b")
+        api.me()
+
+        assertEquals(listOf<String?>("Bearer A_TOKEN", "Bearer B_TOKEN"), seenAuth)
     }
 }

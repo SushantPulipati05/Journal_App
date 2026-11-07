@@ -28,6 +28,9 @@ class SettingsViewModel(
     val state: StateFlow<SettingsUiState> = _state
 
     fun load() {
+        // This ViewModel outlives a sign-out, so start fresh each time Settings opens:
+        // no old account's name/email, and no "busy" left over from the last sign-out.
+        _state.value = SettingsUiState()
         viewModelScope.launch {
             when (val r = session.profile()) {
                 is ApiResult.Ok -> _state.update {
