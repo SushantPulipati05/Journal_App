@@ -5,6 +5,12 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+/** How JSON is read and written everywhere in the app. */
+val apiJson = Json {
+    ignoreUnknownKeys = true // the server may add fields later; old apps must not break
+    explicitNulls = false
+}
+
 /**
  * Builds the HTTP client used everywhere in the app.
  *
@@ -14,9 +20,6 @@ import kotlinx.serialization.json.Json
  */
 fun createHttpClient(): HttpClient = HttpClient {
     install(ContentNegotiation) {
-        json(Json {
-            ignoreUnknownKeys = true // the server may add fields later; old apps must not break
-            explicitNulls = false
-        })
+        json(apiJson)
     }
 }
