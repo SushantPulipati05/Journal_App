@@ -1,0 +1,146 @@
+@base = http://localhost:9090
+
+### NOTE: run 'Log in' (in the AUTH section below) first; entries use its token.
+
+### Create an entry
+POST {{base}}/entries
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"title": "Day 1", "body": "Built my first real Go API."}
+
+### List entries
+GET {{base}}/entries
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Get one entry (paste an id from the list)
+GET {{base}}/entries/PASTE-ENTRY-ID
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Update it
+PUT {{base}}/entries/PASTE-ENTRY-ID
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"title": "Day 1 (edited)", "body": "Built my first real Go API, with sqlc."}
+
+### Delete it
+DELETE {{base}}/entries/PASTE-ENTRY-ID
+Authorization: Bearer {{login.response.body.access_token}}
+
+### --- These should FAIL ---
+
+### No token → 401
+GET {{base}}/entries
+
+### Empty entry → 422
+POST {{base}}/entries
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"title": "", "body": "   "}
+
+### Typo in field name → 400
+POST {{base}}/entries
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"titel": "oops"}
+
+### Bad id → 400
+GET {{base}}/entries/not-a-uuid
+Authorization: Bearer {{login.response.body.access_token}}
+
+### ===== AUTH (Day 2) =====
+
+### Sign up
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"Sushant@example.com","password":"correct-horse-battery","display_name":"Sushant"}
+
+### Log in
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"correct-horse-battery"}
+
+### Refresh (paste the refresh_token from the login response). Run it TWICE:
+### the second call must return 401 (reuse detection).
+POST {{base}}/auth/refresh
+Content-Type: application/json
+
+{"refresh_token":"PASTE-REFRESH-TOKEN"}
+
+### Log out
+POST {{base}}/auth/logout
+Content-Type: application/json
+
+{"refresh_token":"PASTE-REFRESH-TOKEN"}
+
+### Wrong password -> 401
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"wrong-password-here"}
+
+### Duplicate signup -> 409
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"sushant@example.com","password":"correct-horse-battery"}
+
+### Weak password -> 422
+POST {{base}}/auth/signup
+Content-Type: application/json
+
+{"email":"new@example.com","password":"short"}
+
+
+### Who am I (needs a token)
+GET {{base}}/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Forged token -> 401
+GET {{base}}/me
+Authorization: Bearer not.a.real.token
+
+### Delete my account (permanent!)
+DELETE {{base}}/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+
+### ===== SYNC (Day 3) =====
+
+### Push two changes (ids are made up by the device). Dates must not be in the future.
+POST {{base}}/sync/push
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"changes":[
+  {"id":"11111111-1111-4111-8111-111111111111","title":"From my phone","body":"Written offline","created_at":"2026-10-30T08:00:00Z","updated_at":"2026-10-30T08:00:00Z","deleted_at":null},
+  {"id":"22222222-2222-4222-8222-222222222222","title":"Second","body":"Another one","created_at":"2026-10-30T09:00:00Z","updated_at":"2026-10-30T09:00:00Z","deleted_at":null}
+]}
+
+### Push an OLDER edit of the first entry -> status "stale", nothing changes
+POST {{base}}/sync/push
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"changes":[{"id":"11111111-1111-4111-8111-111111111111","title":"Old edit","body":"Should lose","created_at":"2026-10-30T08:00:00Z","updated_at":"2026-10-30T07:00:00Z","deleted_at":null}]}
+
+### Push a deletion (tombstone) of the second entry
+POST {{base}}/sync/push
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: application/json
+
+{"changes":[{"id":"22222222-2222-4222-8222-222222222222","title":"","body":"","created_at":"2026-10-30T09:00:00Z","updated_at":"2026-10-30T10:00:00Z","deleted_at":"2026-10-30T10:00:00Z"}]}
+
+### Pull everything since the start
+GET {{base}}/sync/pull?since=0
+Authorization: Bearer {{login.response.body.access_token}}
+
+### Pull in small pages (follow next_cursor while has_more is true)
+GET {{base}}/sync/pull?since=0&limit=1
+Authorization: Bearer {{login.response.body.access_token}}
