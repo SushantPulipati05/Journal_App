@@ -43,6 +43,7 @@ kotlin {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.androidx.activity.compose) // system back button
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)

@@ -5,10 +5,13 @@ package dev.sushnt.journal.data
 import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.SQLiteDriver
 import androidx.sqlite.SQLiteStatement
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.uuid.ExperimentalUuidApi
@@ -43,6 +46,8 @@ class EntryStore(
     private val connection: SQLiteConnection,
     private val now: () -> Long = { Clock.System.now().toEpochMilliseconds() },
     private val newId: () -> String = { Uuid.random().toString() },
+    // Disk work runs off the UI thread so scrolling never stutters.
+    private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val lock = Mutex()
     private val _revision = MutableStateFlow(0L)
@@ -57,13 +62,13 @@ class EntryStore(
     // ---------- what the screens use ----------
 
     /** Newest first, without deleted entries. */
-    suspend fun list(): List<Entry> = lock.withLock {
+    suspend fun list(): List<Entry> = locked {
         entries("SELECT $COLUMNS FROM entries WHERE deleted_at IS NULL ORDER BY created_at DESC, id")
     }
 
-    suspend fun get(id: String): Entry? = lock.withLock { getUnlocked(id) }
+    suspend fun get(id: String): Entry? = locked { getUnlocked(id) }
 
-    suspend fun create(title: String, body: String): Entry = lock.withLock {
+    suspend fun create(title: String, body: String): Entry = locked {
         val t = now()
         val entry = Entry(newId(), title, body, createdAt = t, updatedAt = t, dirty = true)
         upsert(entry)
@@ -72,9 +77,9 @@ class EntryStore(
     }
 
     /** Returns false if the entry doesn't exist or was deleted. */
-    suspend fun update(id: String, title: String, body: String): Boolean = lock.withLock {
+    suspend fun update(id: String, title: String, body: String): Boolean = locked {
         val old = getUnlocked(id)
-        if (old == null || old.deletedAt != null) return@withLock false
+        if (old == null || old.deletedAt != null) return@locked false
         // updated_at must always grow, or "latest edit wins" could pick the wrong one
         val t = maxOf(now(), old.updatedAt + 1)
         upsert(old.copy(title = title, body = body, updatedAt = t, dirty = true))
@@ -83,9 +88,9 @@ class EntryStore(
     }
 
     /** Marks as deleted and erases the text right away; only a tombstone is kept. */
-    suspend fun delete(id: String): Boolean = lock.withLock {
+    suspend fun delete(id: String): Boolean = locked {
         val old = getUnlocked(id)
-        if (old == null || old.deletedAt != null) return@withLock false
+        if (old == null || old.deletedAt != null) return@locked false
         val t = maxOf(now(), old.updatedAt + 1)
         upsert(old.copy(title = "", body = "", updatedAt = t, deletedAt = t, dirty = true))
         bump()
@@ -94,7 +99,7 @@ class EntryStore(
 
     // ---------- what the sync engine uses ----------
 
-    suspend fun dirtyEntries(): List<Entry> = lock.withLock {
+    suspend fun dirtyEntries(): List<Entry> = locked {
         entries("SELECT $COLUMNS FROM entries WHERE dirty = 1 ORDER BY updated_at, id")
     }
 
@@ -102,7 +107,7 @@ class EntryStore(
      * The server accepted what we sent. Only clears the dirty flag if the entry is still
      * exactly what we sent, so an edit made while the push was in flight is not lost.
      */
-    suspend fun markSynced(id: String, sentUpdatedAt: Long, version: Long) = lock.withLock {
+    suspend fun markSynced(id: String, sentUpdatedAt: Long, version: Long) = locked {
         run("UPDATE entries SET dirty = 0, version = ? WHERE id = ? AND updated_at = ?") {
             it.bindLong(1, version)
             it.bindText(2, id)
@@ -115,24 +120,24 @@ class EntryStore(
      * ours is kept (it will be pushed). Otherwise the server's copy replaces ours.
      * Returns true if the server's copy was stored.
      */
-    suspend fun applyRemote(remote: Entry): Boolean = lock.withLock {
+    suspend fun applyRemote(remote: Entry): Boolean = locked {
         val local = getUnlocked(remote.id)
-        if (local != null && local.dirty && local.updatedAt > remote.updatedAt) return@withLock false
+        if (local != null && local.dirty && local.updatedAt > remote.updatedAt) return@locked false
         upsert(remote.copy(dirty = false))
         bump()
         true
     }
 
-    suspend fun cursor(): Long = lock.withLock {
+    suspend fun cursor(): Long = locked {
         query("SELECT value FROM meta WHERE key = 'cursor'") { it.getLong(0) }.firstOrNull() ?: 0L
     }
 
-    suspend fun setCursor(cursor: Long) = lock.withLock {
+    suspend fun setCursor(cursor: Long) = locked {
         run("INSERT OR REPLACE INTO meta (key, value) VALUES ('cursor', ?)") { it.bindLong(1, cursor) }
     }
 
     /** Wipes everything. Used on sign-out so the next account never sees these entries. */
-    suspend fun clear() = lock.withLock {
+    suspend fun clear() = locked {
         run("DELETE FROM entries") {}
         run("DELETE FROM meta") {}
         bump()
@@ -141,6 +146,9 @@ class EntryStore(
     fun close() = connection.close()
 
     // ---------- internals (call only while holding the lock) ----------
+
+    private suspend fun <T> locked(block: () -> T): T =
+        lock.withLock { withContext(dispatcher) { block() } }
 
     private fun migrate() {
         val version = query("PRAGMA user_version") { it.getLong(0) }.firstOrNull() ?: 0L

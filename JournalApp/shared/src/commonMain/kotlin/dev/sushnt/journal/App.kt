@@ -1,65 +1,71 @@
 package dev.sushnt.journal
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeContentPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.launch
+import dev.sushnt.journal.data.SessionManager
+import dev.sushnt.journal.ui.AuthScreen
+import dev.sushnt.journal.ui.EditorScreen
+import dev.sushnt.journal.ui.EntriesScreen
+import dev.sushnt.journal.ui.EntriesViewModel
+import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
 
-// TEMPORARY screen: proves the app can reach the server on every platform.
-// The real screens (login, entries) replace it in the next steps.
+private const val NEW_ENTRY = "__new__"
+
+/** The whole app. Every platform shows this. initKoin() must have run first. */
 @Composable
-@Preview
 fun App() {
     MaterialTheme {
-        val client = remember { createHttpClient() }
-        DisposableEffect(Unit) { onDispose { client.close() } }
-
-        val scope = rememberCoroutineScope()
-        var result by remember { mutableStateOf("Not checked yet") }
-        var loading by remember { mutableStateOf(false) }
-
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .safeContentPadding()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            Text("Journal", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(24.dp))
-            Button(
-                enabled = !loading,
-                onClick = {
-                    scope.launch {
-                        loading = true
-                        result = checkServer(client)
-                        loading = false
-                    }
-                },
-            ) {
-                Text(if (loading) "Checking..." else "Check server")
+        Surface(Modifier.fillMaxSize()) {
+            val session = koinInject<SessionManager>()
+            val signedIn by session.signedIn.collectAsState(initial = null)
+            when (signedIn) {
+                true -> Journal()
+                false -> AuthScreen()
+                null -> {} // first instant while reading the saved login
             }
-            Spacer(Modifier.height(16.dp))
-            Text(result)
         }
     }
+}
+
+@Composable
+private fun Journal(vm: EntriesViewModel = koinViewModel()) {
+    // Which entry is open: null = the list, NEW_ENTRY = a new one, else an entry id.
+    // rememberSaveable keeps it when an Android phone rotates.
+    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    val entries by vm.entries.collectAsState()
+
+    LaunchedEffect(Unit) { vm.syncNow() } // sync each time the journal appears
+
+    val id = openId
+    if (id == null) {
+        EntriesScreen(
+            vm = vm,
+            onOpen = { openId = it.id },
+            onNew = { openId = NEW_ENTRY },
+        )
+        return
+    }
+
+    val entry = if (id == NEW_ENTRY) null else entries.find { it.id == id }
+    if (id != NEW_ENTRY && entry == null) {
+        // The entry vanished (e.g. deleted on another device during a sync): back to the list.
+        LaunchedEffect(id) { openId = null }
+        return
+    }
+    EditorScreen(
+        entry = entry,
+        onSave = { title, body -> vm.save(entry?.id, title, body) },
+        onDelete = { entry?.let { vm.delete(it.id) } },
+        onClose = { openId = null },
+    )
 }

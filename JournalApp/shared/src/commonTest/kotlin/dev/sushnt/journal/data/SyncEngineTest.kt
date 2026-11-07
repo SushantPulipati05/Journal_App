@@ -98,8 +98,8 @@ class SyncEngineTest {
         assertEquals(listOf(e.id), request!!.changes.map { it.id })
         val saved = store.get(e.id)!!
         assertFalse(saved.dirty)
-        assertEquals(4, saved.version)
-        assertEquals(4, store.cursor())
+        assertEquals(4L, saved.version)
+        assertEquals(4L, store.cursor())
     }
 
     @Test
@@ -118,7 +118,7 @@ class SyncEngineTest {
         val e = store.get("r1")!!
         assertEquals("From phone", e.title)
         assertFalse(e.dirty)
-        assertEquals(3, store.cursor())
+        assertEquals(3L, store.cursor())
     }
 
     @Test
@@ -138,8 +138,8 @@ class SyncEngineTest {
         val result = SyncEngine(newApi(engine), store).sync()
 
         assertEquals(SyncResult.Done(0, 2, 0), result)
-        assertEquals(listOf("0", "1"), sinceValues)
-        assertEquals(2, store.cursor())
+        assertEquals(listOf<String?>("0", "1"), sinceValues)
+        assertEquals(2L, store.cursor())
     }
 
     @Test
@@ -204,7 +204,7 @@ class SyncEngineTest {
 
         assertTrue(result is SyncResult.Failed)
         assertTrue(store.get(e.id)!!.dirty)
-        assertEquals(0, store.cursor())
+        assertEquals(0L, store.cursor())
     }
 
     @Test
@@ -230,7 +230,7 @@ class SyncEngineTest {
         store.setCursor(7)
         store.clear()
         assertTrue(store.list().isEmpty())
-        assertEquals(0, store.cursor())
+        assertEquals(0L, store.cursor())
         assertNull(store.get("anything"))
     }
 }
