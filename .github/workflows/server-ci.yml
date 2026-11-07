@@ -1,0 +1,29 @@
+name: Server CI
+
+on:
+  push:
+    branches: [main]
+    paths: ["journal-server/**"]
+  pull_request:
+    paths: ["journal-server/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: journal-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: journal-server/go.mod
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t journal-server:ci ./journal-server

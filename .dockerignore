@@ -1,8 +1,0 @@
-.git
-.github
-*.exe
-.env
-dev.ps1
-requests.http
-Dockerfile
-.dockerignore
