@@ -6,6 +6,13 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -46,7 +53,7 @@ import androidx.compose.ui.unit.sp
 import dev.sushnt.journal.data.AppPrefs
 
 /**
- * The Write tab: a blank page with the cursor already blinking.
+ * The Write tab: a calm page with the cursor already blinking.
  * No title field: the first line becomes the title (shown a little larger).
  */
 @Composable
@@ -55,8 +62,10 @@ fun WriteScreen(
     prefs: AppPrefs,
     keyboardOpen: Boolean,
     onSettings: () -> Unit,
-    /** true on phones (settings button here, room for the tab bar); false next to the sidebar. */
+    /** true on phones (settings button here); false next to the sidebar. */
     compact: Boolean = true,
+    /** Leave room at the bottom for the floating Write/Journals pill. */
+    tabBarVisible: Boolean = compact,
 ) {
     val text by vm.text.collectAsState()
     val entryId by vm.entryId.collectAsState()
@@ -77,68 +86,91 @@ fun WriteScreen(
     val bottomGap by animateDpAsState(
         when {
             keyboardOpen -> 4.dp
-            compact -> 96.dp // room for the tab bar
-            else -> 24.dp
+            tabBarVisible -> 100.dp // room for the floating tab bar
+            else -> 40.dp
         },
         Motion.standard(),
         label = "bottom gap",
     )
 
     val bodySize = prefs.textSize.sp
-    val titleLook = remember(bodySize) { FirstLineAsTitle((bodySize * 1.4f).sp) }
+    val font = writingFont(prefs.serifFont)
+    val titleLook = remember(bodySize) { FirstLineAsTitle((bodySize * 1.3f).sp) }
+    val writingStyle = TextStyle(
+        color = JournalColors.Body,
+        fontFamily = font,
+        fontSize = bodySize.sp,
+        lineHeight = (bodySize * 1.75f).sp,
+    )
 
-    Column(Modifier.fillMaxSize()) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = if (compact) 24.dp else 8.dp),
+    ) {
+        // ---- header: "• DAILY JOURNAL   Monday, 9 November" ...... "✓ Saved"
         Row(
-            Modifier.fillMaxWidth().padding(start = 24.dp, end = 20.dp, top = 12.dp),
+            Modifier.fillMaxWidth().padding(top = if (compact) 12.dp else 40.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(longDateLabel(startedAt), color = JournalColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
+            Spacer(Modifier.width(8.dp))
+            Text("DAILY JOURNAL", color = JournalColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, maxLines = 1)
+            Spacer(Modifier.width(12.dp))
+            Text(longDateLabel(startedAt), color = JournalColors.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
             Spacer(Modifier.weight(1f))
             AnimatedVisibility(visible = text.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
-                Row {
-                    SaveIndicator(status)
-                    Spacer(Modifier.width(12.dp))
-                }
+                SaveIndicator(status)
             }
-            if (compact && !keyboardOpen) SettingsButton(onSettings)
+            if (compact && !keyboardOpen) {
+                Spacer(Modifier.width(12.dp))
+                SettingsButton(onSettings)
+            }
         }
 
+        // ---- the page
         BasicTextField(
             value = text,
             onValueChange = vm::onTextChange,
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 16.dp)
+                .padding(top = if (compact) 20.dp else 44.dp, bottom = 16.dp)
                 .focusRequester(focus)
                 .semantics { contentDescription = "Journal entry. The first line is the title." },
-            textStyle = TextStyle(
-                color = JournalColors.Body,
-                fontFamily = writingFont(prefs.serifFont),
-                fontSize = bodySize.sp,
-                lineHeight = (bodySize * 1.6f).sp,
-            ),
+            textStyle = writingStyle,
             cursorBrush = SolidColor(JournalColors.Accent),
             visualTransformation = titleLook,
+            decorationBox = { field ->
+                Box {
+                    if (text.isEmpty()) {
+                        Text(
+                            "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…",
+                            style = writingStyle.copy(color = JournalColors.Muted.copy(alpha = 0.55f)),
+                        )
+                    }
+                    field()
+                }
+            },
         )
 
+        // ---- footer: "• NEW ENTRY · 12:13 AM    6 WORDS    1 MIN READ ...... New entry"
+        Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Border))
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 12.dp, bottom = bottomGap),
+            Modifier.fillMaxWidth().padding(top = 6.dp, bottom = bottomGap),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(
-                if (entryId == null) "NEW ENTRY" else "EDITING",
-                color = JournalColors.Accent,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.sp,
-            )
-            Text("· ${timeLabel(startedAt)}", color = JournalColors.Muted, fontSize = 12.sp)
+            Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
+            Spacer(Modifier.width(8.dp))
+            FooterLabel(if (entryId == null) "New entry" else "Editing", JournalColors.Accent)
+            FooterLabel(" · ${timeLabel(startedAt)}", JournalColors.Muted)
+            Spacer(Modifier.width(18.dp))
+            FooterLabel(if (words == 1) "1 word" else "$words words", JournalColors.Muted)
+            if (!compact) {
+                Spacer(Modifier.width(18.dp))
+                FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
+            }
             Spacer(Modifier.weight(1f))
-            Text(if (words == 1) "1 word" else "$words words", color = JournalColors.Muted, fontSize = 12.sp)
             if (keyboardOpen) {
                 TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
                     Text("Done", fontWeight = FontWeight.SemiBold)
@@ -149,9 +181,16 @@ fun WriteScreen(
                     focus.requestFocus()
                     keyboard?.show()
                 }) { Text("New entry", fontWeight = FontWeight.SemiBold) }
+            } else {
+                Spacer(Modifier.height(48.dp)) // keeps the line the same height either way
             }
         }
     }
+}
+
+@Composable
+private fun FooterLabel(text: String, color: Color) {
+    Text(text.uppercase(), color = color, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.4.sp, maxLines = 1)
 }
 
 @Composable

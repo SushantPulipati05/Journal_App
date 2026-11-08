@@ -27,6 +27,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -141,4 +144,18 @@ fun Modifier.pressScale(source: MutableInteractionSource): Modifier {
         scaleX = scale
         scaleY = scale
     }
+}
+
+/**
+ * The soft violet glow at the top of the page (as in the reference design).
+ * Drawn behind the content; costs nothing while scrolling.
+ */
+fun Modifier.topGlow(): Modifier = this.drawBehind {
+    drawRect(
+        Brush.radialGradient(
+            colors = listOf(JournalColors.Accent.copy(alpha = 0.07f), Color.Transparent),
+            center = Offset(size.width * 0.45f, 0f),
+            radius = maxOf(size.width, size.height) * 0.75f,
+        ),
+    )
 }

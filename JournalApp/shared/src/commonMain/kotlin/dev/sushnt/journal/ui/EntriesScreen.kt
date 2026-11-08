@@ -61,6 +61,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.sushnt.journal.data.AppPrefs
@@ -81,6 +82,8 @@ fun JournalsScreen(
     focusSearchSignal: Int = 0,
     /** Owned by the caller so the scroll position survives opening an entry. */
     listState: LazyListState = rememberLazyListState(),
+    /** Space kept free at the bottom (e.g. for a floating tab bar); null = the default. */
+    bottomPadding: Dp? = null,
 ) {
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
@@ -106,7 +109,7 @@ fun JournalsScreen(
         LazyColumn(
             Modifier.fillMaxSize(),
             state = listState,
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (compact) 12.dp else 32.dp, bottom = if (compact) 120.dp else 32.dp),
+            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (compact) 12.dp else 32.dp, bottom = bottomPadding ?: if (compact) 120.dp else 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item {
@@ -162,7 +165,7 @@ fun JournalsScreen(
             }
         }
 
-        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = if (compact) 92.dp else 24.dp)) { data ->
+        SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = if (compact || bottomPadding != null) 92.dp else 24.dp)) { data ->
             Snackbar(
                 snackbarData = data,
                 containerColor = JournalColors.Raised,

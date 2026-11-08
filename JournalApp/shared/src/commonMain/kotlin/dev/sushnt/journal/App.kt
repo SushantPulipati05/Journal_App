@@ -3,7 +3,11 @@ package dev.sushnt.journal
 import androidx.compose.foundation.layout.Box
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -34,7 +38,9 @@ import androidx.compose.ui.unit.Dp
 import dev.sushnt.journal.data.AppPrefs
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.ui.SettingsViewModel
+import dev.sushnt.journal.ui.ClosedSidebarBar
 import dev.sushnt.journal.ui.Sidebar
+import dev.sushnt.journal.ui.topGlow
 import dev.sushnt.journal.ui.SidebarItem
 import dev.sushnt.journal.ui.SyncLine
 import dev.sushnt.journal.ui.relativeLabel
@@ -141,7 +147,7 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
         settingsOpen = false
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+    BoxWithConstraints(Modifier.fillMaxSize().topGlow().windowInsetsPadding(WindowInsets.safeDrawing)) {
         // The layout follows the window size, not the platform: a wide window (desktop,
         // tablet, unfolded foldable) gets the sidebar; a narrow one gets the tab bar.
         if (maxWidth >= 840.dp) {
@@ -359,28 +365,50 @@ private fun WideHome(
                 }
             },
     ) {
-        Sidebar(
-            collapsed = prefs.sidebarCollapsed,
-            current = current,
-            entryCount = entries.size,
-            streak = streak,
-            showStreak = prefs.showStreak,
-            sync = syncLine,
-            userName = account.name ?: account.email,
-            onToggle = { onToggleSidebar(!prefs.sidebarCollapsed) },
-            onSelect = { item ->
-                when (item) {
-                    SidebarItem.Write -> onGoTo(HomeTab.Write)
-                    SidebarItem.Journals -> onGoTo(HomeTab.Journals)
-                    SidebarItem.Settings -> onOpenSettings()
-                }
-            },
-        )
-        VerticalLine()
+        val userName = account.name ?: account.email
+        val sidebarOpen = !prefs.sidebarCollapsed
+
+        // Closing the sidebar hides it completely: the page gets the whole window.
+        AnimatedVisibility(
+            visible = sidebarOpen,
+            enter = expandHorizontally(Motion.standard(), expandFrom = Alignment.Start) + fadeIn(Motion.standard()),
+            exit = shrinkHorizontally(Motion.standard(), shrinkTowards = Alignment.Start) + fadeOut(Motion.quick()),
+        ) {
+            Row(Modifier.fillMaxHeight()) {
+                Sidebar(
+                    current = current,
+                    entryCount = entries.size,
+                    streak = streak,
+                    showStreak = prefs.showStreak,
+                    sync = syncLine,
+                    userName = userName,
+                    onClose = { onToggleSidebar(true) },
+                    onSelect = { item ->
+                        when (item) {
+                            SidebarItem.Write -> onGoTo(HomeTab.Write)
+                            SidebarItem.Journals -> onGoTo(HomeTab.Journals)
+                            SidebarItem.Settings -> onOpenSettings()
+                        }
+                    },
+                )
+                VerticalLine()
+            }
+        }
+
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+        Column(Modifier.fillMaxSize()) {
+        // With the sidebar closed: just a slim bar (open-sidebar button, avatar) at the top...
+        AnimatedVisibility(
+            visible = !sidebarOpen,
+            enter = expandVertically(Motion.standard()) + fadeIn(Motion.standard()),
+            exit = shrinkVertically(Motion.standard()) + fadeOut(Motion.quick()),
+        ) {
+            ClosedSidebarBar(userName, onOpenSidebar = { onToggleSidebar(false) }, onSettings = onOpenSettings)
+        }
 
         AnimatedContent(
             targetState = current,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
             transitionSpec = { fadeThrough() },
             label = "wide sections",
         ) { section ->
@@ -389,13 +417,14 @@ private fun WideHome(
                     SettingsScreen(onClose = onCloseSettings, showBack = false, vm = settings)
                 }
 
-                SidebarItem.Write -> Centered(760.dp) {
+                SidebarItem.Write -> Centered(720.dp) {
                     WriteScreen(
                         vm = write,
                         prefs = prefs,
                         keyboardOpen = false,
                         onSettings = onOpenSettings,
                         compact = false,
+                        tabBarVisible = !sidebarOpen,
                     )
                 }
 
@@ -410,6 +439,7 @@ private fun WideHome(
                             selectedId = reading?.id,
                             focusSearchSignal = focusSearch,
                             listState = listState,
+                            bottomPadding = if (sidebarOpen) null else 110.dp,
                         )
                     }
                     VerticalLine()
@@ -447,6 +477,17 @@ private fun WideHome(
                     }
                 }
             }
+        }
+        }
+        // ...and the floating Write/Journals pill at the bottom, like on the phone.
+        AnimatedVisibility(
+            visible = !sidebarOpen && current != SidebarItem.Settings,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
+            enter = slideInVertically(Motion.standard()) { it * 2 } + fadeIn(Motion.standard()),
+            exit = slideOutVertically(Motion.quick()) { it * 2 } + fadeOut(Motion.quick()),
+        ) {
+            TabBar(current = if (current == SidebarItem.Journals) HomeTab.Journals else HomeTab.Write, onSelect = onGoTo)
+        }
         }
     }
 }
