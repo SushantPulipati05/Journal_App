@@ -1,6 +1,18 @@
 package dev.sushnt.journal
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import dev.sushnt.journal.ui.Motion
+import dev.sushnt.journal.ui.Motion.backward
+import dev.sushnt.journal.ui.Motion.fadeThrough
+import dev.sushnt.journal.ui.Motion.forward
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -121,6 +133,8 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
     }
 
     val reading = readingId?.let { id -> entries.find { it.id == id } }
+    // Kept here so the Journals list stays scrolled where you left it after reading an entry.
+    val listState = rememberLazyListState()
     val goTo: (HomeTab) -> Unit = { next ->
         if (tab == HomeTab.Write && next != HomeTab.Write) write.flush()
         tab = next
@@ -138,6 +152,7 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
                 tab = tab,
                 settingsOpen = settingsOpen,
                 reading = reading,
+                listState = listState,
                 onGoTo = goTo,
                 onOpenSettings = {
                     write.flush()
@@ -158,6 +173,7 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
                 tab = tab,
                 settingsOpen = settingsOpen,
                 reading = reading,
+                listState = listState,
                 onGoTo = goTo,
                 onOpenSettings = {
                     write.flush()
@@ -177,7 +193,16 @@ private fun prefsUpdate(store: PrefsStore, change: (AppPrefs) -> AppPrefs) {
 
 private val prefsScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-/** Phones: one screen at a time, tab bar at the bottom. */
+/** Which full screen the phone layout shows. Depth decides the direction of the slide. */
+private sealed interface PhoneScreen {
+    val depth: Int
+    data object Write : PhoneScreen { override val depth = 0 }
+    data object Journals : PhoneScreen { override val depth = 0 }
+    data class Reading(val id: String) : PhoneScreen { override val depth = 1 }
+    data object Settings : PhoneScreen { override val depth = 1 }
+}
+
+/** Phones: one screen at a time, tab bar at the bottom. Every change of screen is animated. */
 @Composable
 private fun BoxScope.CompactHome(
     write: WriteViewModel,
@@ -186,6 +211,7 @@ private fun BoxScope.CompactHome(
     tab: HomeTab,
     settingsOpen: Boolean,
     reading: Entry?,
+    listState: LazyListState,
     onGoTo: (HomeTab) -> Unit,
     onOpenSettings: () -> Unit,
     onCloseSettings: () -> Unit,
@@ -193,48 +219,76 @@ private fun BoxScope.CompactHome(
 ) {
     // Keyboard up = focus mode: the tab bar steps aside.
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val entries by journals.entries.collectAsState()
 
-    when {
-        settingsOpen -> SettingsScreen(onClose = onCloseSettings)
+    val screen: PhoneScreen = when {
+        settingsOpen -> PhoneScreen.Settings
+        reading != null -> PhoneScreen.Reading(reading.id)
+        tab == HomeTab.Journals -> PhoneScreen.Journals
+        else -> PhoneScreen.Write
+    }
 
-        reading != null -> key(reading.id) {
-            // key(): each entry gets its own editing state, so switching entries can
-            // never save one entry's text into another.
-            EntryScreen(
-                entry = reading,
+    AnimatedContent(
+        targetState = screen,
+        modifier = Modifier.fillMaxSize(),
+        transitionSpec = {
+            when {
+                targetState.depth > initialState.depth -> forward()
+                targetState.depth < initialState.depth -> backward()
+                else -> fadeThrough()
+            }
+        },
+        label = "phone screens",
+    ) { shown ->
+        when (shown) {
+            PhoneScreen.Settings -> SettingsScreen(onClose = onCloseSettings)
+
+            is PhoneScreen.Reading -> {
+                // While sliding away after a delete, the entry may already be gone: show nothing.
+                val entry = entries.find { it.id == shown.id }
+                if (entry != null) {
+                    key(entry.id) {
+                        // key(): each entry gets its own editing state, so switching entries can
+                        // never save one entry's text into another.
+                        EntryScreen(
+                            entry = entry,
+                            prefs = prefs,
+                            onBack = { onRead(null) },
+                            onSaveText = { text -> journals.saveEdit(entry.id, text) },
+                            onDelete = {
+                                journals.deleteWithUndo(entry)
+                                onRead(null)
+                            },
+                        )
+                    }
+                }
+            }
+
+            PhoneScreen.Write -> WriteScreen(
+                vm = write,
                 prefs = prefs,
-                onBack = { onRead(null) },
-                onSaveText = { text -> journals.saveEdit(reading.id, text) },
-                onDelete = {
-                    journals.deleteWithUndo(reading)
-                    onRead(null)
-                },
+                keyboardOpen = keyboardOpen,
+                onSettings = onOpenSettings,
+            )
+
+            PhoneScreen.Journals -> JournalsScreen(
+                vm = journals,
+                prefs = prefs,
+                onOpen = { onRead(it.id) },
+                onSettings = onOpenSettings,
+                listState = listState,
             )
         }
+    }
 
-        else -> {
-            when (tab) {
-                HomeTab.Write -> WriteScreen(
-                    vm = write,
-                    prefs = prefs,
-                    keyboardOpen = keyboardOpen,
-                    onSettings = onOpenSettings,
-                )
-                HomeTab.Journals -> JournalsScreen(
-                    vm = journals,
-                    prefs = prefs,
-                    onOpen = { onRead(it.id) },
-                    onSettings = onOpenSettings,
-                )
-            }
-            if (!keyboardOpen) {
-                TabBar(
-                    current = tab,
-                    onSelect = onGoTo,
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
-                )
-            }
-        }
+    // The tab bar slides down out of the way while typing or inside an entry/Settings.
+    AnimatedVisibility(
+        visible = !keyboardOpen && screen.depth == 0,
+        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
+        enter = slideInVertically(Motion.standard()) { it * 2 } + fadeIn(Motion.standard()),
+        exit = slideOutVertically(Motion.quick()) { it * 2 } + fadeOut(Motion.quick()),
+    ) {
+        TabBar(current = tab, onSelect = onGoTo)
     }
 }
 
@@ -247,6 +301,7 @@ private fun WideHome(
     tab: HomeTab,
     settingsOpen: Boolean,
     reading: Entry?,
+    listState: LazyListState,
     onGoTo: (HomeTab) -> Unit,
     onOpenSettings: () -> Unit,
     onCloseSettings: () -> Unit,
@@ -323,8 +378,13 @@ private fun WideHome(
         )
         VerticalLine()
 
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-            when (current) {
+        AnimatedContent(
+            targetState = current,
+            modifier = Modifier.weight(1f).fillMaxHeight(),
+            transitionSpec = { fadeThrough() },
+            label = "wide sections",
+        ) { section ->
+            when (section) {
                 SidebarItem.Settings -> Centered(640.dp) {
                     SettingsScreen(onClose = onCloseSettings, showBack = false, vm = settings)
                 }
@@ -349,19 +409,28 @@ private fun WideHome(
                             compact = false,
                             selectedId = reading?.id,
                             focusSearchSignal = focusSearch,
+                            listState = listState,
                         )
                     }
                     VerticalLine()
-                    Box(Modifier.weight(1f).fillMaxHeight()) {
-                        if (reading != null) {
+                    // Picking another entry cross-fades the reading pane.
+                    AnimatedContent(
+                        targetState = reading?.id,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        transitionSpec = { fadeThrough() },
+                        label = "entry pane",
+                    ) { id ->
+                        val entry = id?.let { wanted -> entries.find { it.id == wanted } }
+                        Box(Modifier.fillMaxSize()) {
+                        if (entry != null) {
                             Centered(760.dp) {
-                                key(reading.id) { EntryScreen(
-                                    entry = reading,
+                                key(entry.id) { EntryScreen(
+                                    entry = entry,
                                     prefs = prefs,
                                     onBack = { onRead(null) },
-                                    onSaveText = { text -> journals.saveEdit(reading.id, text) },
+                                    onSaveText = { text -> journals.saveEdit(entry.id, text) },
                                     onDelete = {
-                                        journals.deleteWithUndo(reading)
+                                        journals.deleteWithUndo(entry)
                                         onRead(null)
                                     },
                                     showBack = false,
@@ -373,6 +442,7 @@ private fun WideHome(
                                 color = JournalColors.Muted,
                                 modifier = Modifier.align(Alignment.Center),
                             )
+                        }
                         }
                     }
                 }

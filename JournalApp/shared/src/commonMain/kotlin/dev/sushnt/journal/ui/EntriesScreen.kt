@@ -2,7 +2,14 @@
 
 package dev.sushnt.journal.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -70,6 +79,8 @@ fun JournalsScreen(
     selectedId: String? = null,
     /** Goes up by one each time Ctrl+F asks to jump into the search box. */
     focusSearchSignal: Int = 0,
+    /** Owned by the caller so the scroll position survives opening an entry. */
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
@@ -94,6 +105,7 @@ fun JournalsScreen(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.fillMaxSize(),
+            state = listState,
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = if (compact) 12.dp else 32.dp, bottom = if (compact) 120.dp else 32.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -111,14 +123,18 @@ fun JournalsScreen(
                 }
             }
 
-            if (syncing) item { LinearProgressIndicator(Modifier.fillMaxWidth().clip(CircleShape)) }
-            message?.let { note -> item { Text(note, color = JournalColors.Muted, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 4.dp)) } }
+            if (syncing) item(key = "syncing") { LinearProgressIndicator(Modifier.animateItem().fillMaxWidth().clip(CircleShape)) }
+            message?.let { note ->
+                item(key = "message") {
+                    Text(note, color = JournalColors.Muted, fontSize = 12.sp, modifier = Modifier.animateItem().padding(horizontal = 4.dp))
+                }
+            }
 
             if (all.isNotEmpty()) {
-                item { SearchField(query, vm::setQuery, searchFocus) }
+                item(key = "search") { SearchField(query, vm::setQuery, searchFocus) }
             }
             if (prefs.showStreak && streak > 0 && query.isBlank()) {
-                item { StreakCard(streak) }
+                item(key = "streak") { Box(Modifier.animateItem()) { StreakCard(streak) } }
             }
 
             if (sections.isEmpty()) {
@@ -135,10 +151,11 @@ fun JournalsScreen(
 
             sections.forEach { section ->
                 item(key = "header-${section.header}") {
-                    SectionLabel(section.header, Modifier.padding(top = 10.dp))
+                    SectionLabel(section.header, Modifier.animateItem().padding(top = 10.dp))
                 }
                 items(section.entries, key = { it.id }) { entry ->
-                    SwipeToDelete(onDelete = { vm.deleteWithUndo(entry) }) {
+                    // animateItem(): cards fade in, fade out, and glide into place when the list changes.
+                    SwipeToDelete(Modifier.animateItem(), onDelete = { vm.deleteWithUndo(entry) }) {
                         EntryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) })
                     }
                 }
@@ -158,13 +175,14 @@ fun JournalsScreen(
 
 /** Swipe a card to the left to delete it. A red "Delete" shows underneath while dragging. */
 @Composable
-private fun SwipeToDelete(onDelete: () -> Unit, content: @Composable () -> Unit) {
+private fun SwipeToDelete(modifier: Modifier, onDelete: () -> Unit, content: @Composable () -> Unit) {
     val state = rememberSwipeToDismissBoxState()
     LaunchedEffect(state.currentValue) {
         if (state.currentValue == SwipeToDismissBoxValue.EndToStart) onDelete()
     }
     SwipeToDismissBox(
         state = state,
+        modifier = modifier,
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Box(
@@ -203,7 +221,11 @@ private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusR
                 modifier = Modifier.fillMaxWidth().focusRequester(focus).semantics { contentDescription = "Search your entries" },
             )
         }
-        if (query.isNotEmpty()) {
+        AnimatedVisibility(
+            visible = query.isNotEmpty(),
+            enter = fadeIn(Motion.quick()) + scaleIn(Motion.quick(), initialScale = 0.8f),
+            exit = fadeOut(Motion.quick()) + scaleOut(Motion.quick(), targetScale = 0.8f),
+        ) {
             Text(
                 "Clear",
                 color = JournalColors.Accent,
@@ -249,9 +271,11 @@ private fun StreakCard(days: Int) {
 
 @Composable
 private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
     Column(
         Modifier
             .fillMaxWidth()
+            .pressScale(source)
             .then(
                 if (selected) {
                     Modifier.clip(CardShape).background(Color(0xFF171B33)).border(1.dp, JournalColors.Accent, CardShape)
@@ -259,7 +283,7 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
                     Modifier.card()
                 },
             )
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(interactionSource = source, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {

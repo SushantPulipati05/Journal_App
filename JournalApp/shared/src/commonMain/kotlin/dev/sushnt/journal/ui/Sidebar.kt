@@ -1,6 +1,14 @@
 package dev.sushnt.journal.ui
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -57,16 +65,24 @@ fun Sidebar(
     onToggle: () -> Unit,
     onSelect: (SidebarItem) -> Unit,
 ) {
-    val width by animateDpAsState(if (collapsed) 72.dp else 236.dp)
+    val width by animateDpAsState(if (collapsed) 72.dp else 236.dp, Motion.standard(), label = "sidebar width")
+    // The panel's width slides; its contents cross-fade. The open layout is always laid out
+    // at full width (and clipped), so text never squashes or wraps mid-animation.
+    Box(Modifier.width(width).fillMaxHeight().background(JournalColors.Inset).clipToBounds()) {
+    AnimatedContent(
+        targetState = collapsed,
+        transitionSpec = { fadeIn(tween(200, delayMillis = 100)) togetherWith fadeOut(tween(90)) },
+        label = "sidebar content",
+    ) { folded ->
     Column(
         Modifier
-            .width(width)
             .fillMaxHeight()
-            .background(JournalColors.Inset)
-            .padding(horizontal = if (collapsed) 14.dp else 16.dp, vertical = 18.dp),
+            .wrapContentWidth(align = Alignment.Start, unbounded = true)
+            .width(if (folded) 72.dp else 236.dp)
+            .padding(horizontal = if (folded) 14.dp else 16.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (collapsed) {
+        if (folded) {
             IconAction(Glyph.Panel, "Open sidebar", Color(0xFF9AA3B8), onToggle)
             Spacer(Modifier.height(14.dp))
             RailButton(Glyph.Pen, "Write", current == SidebarItem.Write) { onSelect(SidebarItem.Write) }
@@ -157,17 +173,20 @@ fun Sidebar(
             }
         }
     }
+    }
+    }
 }
 
 @Composable
 private fun NavButton(glyph: Glyph, label: String, trailing: String, isSelected: Boolean, onClick: () -> Unit) {
-    val color = if (isSelected) JournalColors.Accent else Color(0xFFC9CEDB)
+    val color by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFFC9CEDB), Motion.standard(), label = "nav ink")
+    val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "nav fill")
     Row(
         Modifier
             .fillMaxWidth()
             .height(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) JournalColors.AccentContainer else Color.Transparent)
+            .background(fill)
             .clickable(role = Role.Tab, onClick = onClick)
             .semantics { selected = isSelected }
             .padding(horizontal = 12.dp),
@@ -183,11 +202,13 @@ private fun NavButton(glyph: Glyph, label: String, trailing: String, isSelected:
 /** A nav button with only an icon (folded sidebar). */
 @Composable
 private fun RailButton(glyph: Glyph, label: String, isSelected: Boolean, onClick: () -> Unit) {
+    val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "rail fill")
+    val ink by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFFC9CEDB), Motion.standard(), label = "rail ink")
     Box(
         Modifier
             .size(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (isSelected) JournalColors.AccentContainer else Color.Transparent)
+            .background(fill)
             .clickable(role = Role.Tab, onClick = onClick)
             .semantics {
                 contentDescription = label
@@ -195,7 +216,7 @@ private fun RailButton(glyph: Glyph, label: String, isSelected: Boolean, onClick
             },
         contentAlignment = Alignment.Center,
     ) {
-        LineIcon(glyph, if (isSelected) JournalColors.Accent else Color(0xFFC9CEDB))
+        LineIcon(glyph, ink)
     }
 }
 

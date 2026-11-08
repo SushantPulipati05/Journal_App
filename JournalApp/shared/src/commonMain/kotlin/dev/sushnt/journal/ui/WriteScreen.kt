@@ -1,5 +1,11 @@
 package dev.sushnt.journal.ui
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -68,6 +74,16 @@ fun WriteScreen(
         keyboard?.show()
     }
 
+    val bottomGap by animateDpAsState(
+        when {
+            keyboardOpen -> 4.dp
+            compact -> 96.dp // room for the tab bar
+            else -> 24.dp
+        },
+        Motion.standard(),
+        label = "bottom gap",
+    )
+
     val bodySize = prefs.textSize.sp
     val titleLook = remember(bodySize) { FirstLineAsTitle((bodySize * 1.4f).sp) }
 
@@ -78,9 +94,11 @@ fun WriteScreen(
         ) {
             Text(longDateLabel(startedAt), color = JournalColors.Muted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
             Spacer(Modifier.weight(1f))
-            if (text.isNotEmpty()) {
-                SaveIndicator(status)
-                Spacer(Modifier.width(12.dp))
+            AnimatedVisibility(visible = text.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                Row {
+                    SaveIndicator(status)
+                    Spacer(Modifier.width(12.dp))
+                }
             }
             if (compact && !keyboardOpen) SettingsButton(onSettings)
         }
@@ -107,11 +125,7 @@ fun WriteScreen(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 12.dp, bottom = when {
-                    keyboardOpen -> 4.dp
-                    compact -> 96.dp // room for the tab bar
-                    else -> 24.dp
-                }),
+                .padding(start = 24.dp, end = 12.dp, bottom = bottomGap),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -142,8 +156,13 @@ fun WriteScreen(
 
 @Composable
 private fun SaveIndicator(status: SaveStatus) {
+    AnimatedContent(
+        targetState = status,
+        transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
+        label = "save status",
+    ) { shown ->
     Row(verticalAlignment = Alignment.CenterVertically) {
-        when (status) {
+        when (shown) {
             SaveStatus.Saved -> {
                 LineIcon(Glyph.Check, JournalColors.Success, size = 14.dp, strokeWidth = 2.2f)
                 Spacer(Modifier.width(6.dp))
@@ -152,6 +171,7 @@ private fun SaveIndicator(status: SaveStatus) {
             SaveStatus.Saving -> Text("Saving…", color = JournalColors.Muted, fontSize = 12.sp)
             SaveStatus.Idle -> {}
         }
+    }
     }
 }
 

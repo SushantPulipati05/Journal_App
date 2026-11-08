@@ -1,5 +1,13 @@
 package dev.sushnt.journal.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,13 +56,16 @@ fun TabBar(current: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier = M
 
 @Composable
 private fun TabButton(label: String, glyph: Glyph, isSelected: Boolean, onClick: () -> Unit) {
-    val color = if (isSelected) JournalColors.Accent else Color(0xFF9AA3B8)
+    val color by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFF9AA3B8), Motion.standard(), label = "tab text")
+    val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "tab fill")
+    val source = remember { MutableInteractionSource() }
     Row(
         Modifier
             .height(44.dp)
+            .pressScale(source)
             .clip(CircleShape)
-            .background(if (isSelected) JournalColors.AccentContainer else Color.Transparent)
-            .clickable(role = Role.Tab, onClick = onClick)
+            .background(fill)
+            .clickable(interactionSource = source, indication = LocalIndication.current, role = Role.Tab, onClick = onClick)
             .semantics { selected = isSelected }
             .padding(horizontal = 22.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -115,5 +126,19 @@ fun IconAction(glyph: Glyph, description: String, tint: Color, onClick: () -> Un
         contentAlignment = Alignment.Center,
     ) {
         LineIcon(glyph, tint)
+    }
+}
+
+/**
+ * A gentle "squish" while a finger is down, so taps feel physical.
+ * Put it early in the chain, and pass the SAME [source] to the later .clickable().
+ */
+@Composable
+fun Modifier.pressScale(source: MutableInteractionSource): Modifier {
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, Motion.gentleSpring(), label = "press")
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
     }
 }

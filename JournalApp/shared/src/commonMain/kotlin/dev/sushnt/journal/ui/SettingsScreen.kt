@@ -1,5 +1,8 @@
 package dev.sushnt.journal.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -285,12 +288,14 @@ private fun TextSizePicker(current: EntryTextSize, serif: Boolean, onPick: (Entr
         ) {
             EntryTextSize.entries.forEachIndexed { i, size ->
                 val isSelected = size == current
+                val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "size fill")
+                val ink by animateColorAsState(if (isSelected) JournalColors.Accent else JournalColors.Preview, Motion.standard(), label = "size ink")
                 Box(
                     Modifier
                         .weight(1f)
                         .height(48.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) JournalColors.AccentContainer else Color.Transparent)
+                        .background(fill)
                         .clickable(role = Role.RadioButton) { onPick(size) }
                         .semantics {
                             contentDescription = size.label
@@ -300,7 +305,7 @@ private fun TextSizePicker(current: EntryTextSize, serif: Boolean, onPick: (Entr
                 ) {
                     Text(
                         "Aa",
-                        color = if (isSelected) JournalColors.Accent else JournalColors.Preview,
+                        color = ink,
                         fontFamily = font,
                         fontSize = buttonSizes[i].sp,
                         fontWeight = FontWeight.Medium,
@@ -308,14 +313,16 @@ private fun TextSizePicker(current: EntryTextSize, serif: Boolean, onPick: (Entr
                 }
             }
         }
+        val previewSize by animateFloatAsState(current.sp.toFloat(), Motion.standard(), label = "preview size")
         Text(
             "It started raining halfway down the hill and I didn't even mind.",
             color = JournalColors.Body,
             fontFamily = font,
-            fontSize = current.sp.sp,
-            lineHeight = (current.sp * 1.55f).sp,
+            fontSize = previewSize.sp,
+            lineHeight = (previewSize * 1.55f).sp,
             modifier = Modifier
                 .fillMaxWidth()
+                .animateContentSize(Motion.standard())
                 .clip(RoundedCornerShape(12.dp))
                 .background(JournalColors.Inset)
                 .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -338,19 +345,21 @@ private fun Segmented(options: List<Pair<String, FontFamily>>, selectedIndex: In
     ) {
         options.forEachIndexed { i, (label, family) ->
             val isSelected = i == selectedIndex
+            val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "segment fill")
+            val ink by animateColorAsState(if (isSelected) JournalColors.Accent else JournalColors.Preview, Motion.standard(), label = "segment ink")
             Box(
                 Modifier
                     .weight(1f)
                     .height(44.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (isSelected) JournalColors.AccentContainer else Color.Transparent)
+                    .background(fill)
                     .clickable(role = Role.RadioButton) { onSelect(i) }
                     .semantics { selected = isSelected },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     label,
-                    color = if (isSelected) JournalColors.Accent else JournalColors.Preview,
+                    color = ink,
                     fontFamily = family,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Medium,
