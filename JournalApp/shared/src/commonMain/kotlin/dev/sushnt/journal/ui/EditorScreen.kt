@@ -1,106 +1,123 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package dev.sushnt.journal.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.sushnt.journal.data.AppPrefs
 import dev.sushnt.journal.data.Entry
+import kotlinx.coroutines.delay
 
 /**
- * Writing screen. Leaving it (Done, or the phone's back gesture) saves automatically,
- * the way Notes apps do.
- *
- * @param entry null for a brand-new entry.
+ * One entry, opened from the Journals tab. It reads like a page, but it IS the
+ * editor: tap anywhere in the text and the cursor appears. Changes save themselves.
  */
 @Composable
-fun EditorScreen(
-    entry: Entry?,
-    onSave: (title: String, body: String) -> Unit,
+fun EntryScreen(
+    entry: Entry,
+    prefs: AppPrefs,
+    onBack: () -> Unit,
+    onSaveText: (String) -> Unit,
     onDelete: () -> Unit,
-    onClose: () -> Unit,
+    /** false when shown beside the list on a wide screen (nothing to go back to). */
+    showBack: Boolean = true,
 ) {
-    var title by rememberSaveable(entry?.id) { mutableStateOf(entry?.title ?: "") }
-    var body by rememberSaveable(entry?.id) { mutableStateOf(entry?.body ?: "") }
-    var askDelete by rememberSaveable { mutableStateOf(false) }
+    PlatformBackHandler(enabled = showBack, onBack = onBack)
 
-    val saveAndClose = {
-        onSave(title, body)
-        onClose()
+    var text by rememberSaveable(entry.id) { mutableStateOf(joinEntryText(entry.title, entry.body)) }
+    val latestText by rememberUpdatedState(text)
+
+    // Save a moment after typing stops, and once more when leaving the screen.
+    LaunchedEffect(text) {
+        delay(800)
+        onSaveText(text)
     }
-    PlatformBackHandler(enabled = true, onBack = saveAndClose)
+    DisposableEffect(entry.id) {
+        onDispose { onSaveText(latestText) }
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (entry == null) "New entry" else "Edit entry") },
-                navigationIcon = { TextButton(onClick = saveAndClose) { Text("Done") } },
-                actions = {
-                    if (entry != null) {
-                        TextButton(onClick = { askDelete = true }) {
-                            Text("Delete", color = MaterialTheme.colorScheme.error)
-                        }
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    val words = remember(text) { wordCount(text) }
+    val size = prefs.textSize.sp
+    val titleLook = remember(size) { FirstLineAsTitle((size * 1.5f).sp) }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (showBack) {
+                TextButton(onClick = onBack) {
+                    LineIcon(Glyph.Back, JournalColors.Text)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Journals", color = JournalColors.Text, fontWeight = FontWeight.Medium)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            // Same as swiping the card away: it can be undone for a few seconds.
+            IconAction(Glyph.Trash, "Delete entry", JournalColors.Danger, onDelete)
+        }
+
         Column(
             Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-                .padding(16.dp),
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 48.dp),
         ) {
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it.take(MAX_TITLE) },
-                label = { Text("Title") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                "${longDateLabel(entry.createdAt)} · ${timeLabel(entry.createdAt)}".uppercase(),
+                color = JournalColors.Accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
             )
-            Spacer(Modifier.height(12.dp))
-            OutlinedTextField(
-                value = body,
-                onValueChange = { body = it },
-                placeholder = { Text("What's on your mind?") },
-                modifier = Modifier.fillMaxWidth().weight(1f),
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "${if (words == 1) "1 word" else "$words words"} · ${readMinutes(words)} min read",
+                color = JournalColors.Muted,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(18.dp))
+            BasicTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 420.dp) // so tapping below the last line still starts typing
+                    .semantics { contentDescription = "Entry text. Tap to edit." },
+                textStyle = TextStyle(
+                    color = JournalColors.Body,
+                    fontFamily = writingFont(prefs.serifFont),
+                    fontSize = size.sp,
+                    lineHeight = (size * 1.65f).sp,
+                ),
+                cursorBrush = SolidColor(JournalColors.Accent),
+                visualTransformation = titleLook,
             )
         }
-    }
-
-    if (askDelete) {
-        AlertDialog(
-            onDismissRequest = { askDelete = false },
-            title = { Text("Delete this entry?") },
-            text = { Text("It will be removed from all your devices.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    askDelete = false
-                    onDelete()
-                    onClose()
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { askDelete = false }) { Text("Cancel") } },
-        )
     }
 }

@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.sushnt.journal.api.ApiError
 import dev.sushnt.journal.api.ApiResult
+import dev.sushnt.journal.data.AppPrefs
+import dev.sushnt.journal.data.PrefsStore
 import dev.sushnt.journal.data.SessionManager
+import dev.sushnt.journal.data.SyncController
 import dev.sushnt.journal.data.SyncEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,9 +26,22 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val session: SessionManager,
     private val sync: SyncEngine,
+    private val prefsStore: PrefsStore,
+    private val syncController: SyncController,
 ) : ViewModel() {
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state
+
+    val prefs: StateFlow<AppPrefs> = prefsStore.prefs
+    val syncing: StateFlow<Boolean> = syncController.syncing
+    val syncMessage: StateFlow<String?> = syncController.message
+    val lastSyncedAt: StateFlow<Long?> = syncController.lastSyncedAt
+
+    fun updatePrefs(change: (AppPrefs) -> AppPrefs) {
+        viewModelScope.launch { prefsStore.update(change) }
+    }
+
+    fun syncNow() = syncController.syncNow()
 
     fun load() {
         // This ViewModel outlives a sign-out, so start fresh each time Settings opens:

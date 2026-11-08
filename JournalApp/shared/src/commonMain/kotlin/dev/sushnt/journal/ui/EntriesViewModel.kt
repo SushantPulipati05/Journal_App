@@ -2,11 +2,11 @@ package dev.sushnt.journal.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dev.sushnt.journal.api.ApiError
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
-import dev.sushnt.journal.data.SyncEngine
-import dev.sushnt.journal.data.SyncResult
+import dev.sushnt.journal.data.SyncController
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -14,89 +14,102 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.datetime.LocalDate
 
-/** Max title length the server accepts. */
-const val MAX_TITLE = 200
+/** One day in the Journals list: "Today", "Yesterday", "3 Nov"... */
+data class DaySection(val header: String, val entries: List<Entry>)
 
+/** The Journals tab: every entry, grouped by day, with search and the streak. */
 class EntriesViewModel(
     private val store: EntryStore,
-    private val sync: SyncEngine,
+    private val syncController: SyncController,
 ) : ViewModel() {
 
-    /** Every entry. Reloads by itself whenever the database changes (local edit or sync). */
-    val entries: StateFlow<List<Entry>> = store.revision
-        .map { store.list() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /** An entry swiped away but not deleted yet, so "Undo" can still bring it back. */
+    private val _pendingDelete = MutableStateFlow<Entry?>(null)
+    val pendingDelete: StateFlow<Entry?> = _pendingDelete
+    private var deleteJob: Job? = null
+    private var syncJob: Job? = null
+
+    /** Every entry, newest first (minus one waiting to be deleted). Reloads on every database change. */
+    val entries: StateFlow<List<Entry>> = combine(store.revision.map { store.list() }, _pendingDelete) { list, pending ->
+        if (pending == null) list else list.filter { it.id != pending.id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
-    /** What the list shows: entries matching the search box (all of them when it's empty). */
-    val visibleEntries: StateFlow<List<Entry>> = combine(entries, _query) { list, q ->
+    /** What the list shows: matching entries, grouped by the day they were written. */
+    val sections: StateFlow<List<DaySection>> = combine(entries, _query) { list, q ->
         val words = q.trim().lowercase().split(' ').filter { it.isNotEmpty() }
-        if (words.isEmpty()) list
-        else list.filter { e ->
+        val matching = if (words.isEmpty()) list else list.filter { e ->
             val text = (e.title + " " + e.body).lowercase()
             words.all { it in text }
         }
+        val now = nowMillis()
+        matching
+            .groupBy { localDate(it.createdAt) }
+            .entries
+            .sortedByDescending { it.key }
+            .map { (day: LocalDate, dayEntries) ->
+                DaySection(dayHeader(day, now), dayEntries.sortedByDescending { it.createdAt })
+            }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    private val _syncing = MutableStateFlow(false)
-    val syncing: StateFlow<Boolean> = _syncing
+    /** Days in a row with at least one entry. */
+    val streak: StateFlow<Int> = entries
+        .map { list -> streakDays(list.map { localDate(it.createdAt) }.toSet(), localDate(nowMillis())) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    /** A short note for the user, e.g. "offline". null = nothing to say. */
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message
-
-    private var syncAgain = false
+    val syncing: StateFlow<Boolean> = syncController.syncing
+    val message: StateFlow<String?> = syncController.message
 
     fun setQuery(q: String) {
         _query.value = q
     }
 
-    /** Starts a sync. If one is running, another runs right after it, so no change is missed. */
-    fun syncNow() {
-        if (_syncing.value) {
-            syncAgain = true
-            return
+    fun syncNow() = syncController.syncNow()
+
+    /** Hide the entry now; really delete it after a few seconds unless [undoDelete] is called. */
+    fun deleteWithUndo(entry: Entry) {
+        commitPendingDelete() // only one undo at a time: the previous one becomes final
+        _pendingDelete.value = entry
+        deleteJob = viewModelScope.launch {
+            delay(5_000)
+            commitPendingDelete()
         }
+    }
+
+    fun undoDelete() {
+        deleteJob?.cancel()
+        _pendingDelete.value = null
+    }
+
+    /** Make a waiting delete final right away (also called when the app goes to the background). */
+    fun commitPendingDelete() {
+        val entry = _pendingDelete.value ?: return
+        deleteJob?.cancel()
+        _pendingDelete.value = null
         viewModelScope.launch {
-            _syncing.value = true
-            do {
-                syncAgain = false
-                _message.value = when (val result = sync.sync()) {
-                    is SyncResult.Done ->
-                        if (result.failed > 0) "${result.failed} change(s) were refused by the server." else null
-                    is SyncResult.Failed -> when (val e = result.error) {
-                        is ApiError.Network -> "Offline. Your changes are saved here and will sync later."
-                        ApiError.SessionExpired -> null // the app switches to the login screen by itself
-                        is ApiError.Server -> "Sync failed (server error ${e.status})."
-                    }
+            if (store.delete(entry.id)) syncController.syncNow()
+        }
+    }
+
+    /** Saves edits made by tapping into an entry on the reading screen. */
+    fun saveEdit(id: String, text: String) {
+        if (text.isBlank()) return // never wipe an entry by accident; swipe to delete instead
+        viewModelScope.launch {
+            val entry = store.get(id) ?: return@launch
+            if (entry.deletedAt != null) return@launch
+            val (title, body) = splitEntryText(text)
+            if (entry.title != title || entry.body != body) {
+                store.update(id, title, body)
+                syncJob?.cancel()
+                syncJob = viewModelScope.launch {
+                    delay(4_000)
+                    syncController.syncNow()
                 }
-            } while (syncAgain)
-            _syncing.value = false
-        }
-    }
-
-    /** id == null creates a new entry. Empty new entries are not saved. */
-    fun save(id: String?, title: String, body: String) {
-        viewModelScope.launch {
-            val t = title.trim().take(MAX_TITLE)
-            if (id == null) {
-                if (t.isEmpty() && body.isBlank()) return@launch
-                store.create(t, body)
-            } else {
-                val old = store.get(id) ?: return@launch
-                if (old.title == t && old.body == body) return@launch // nothing changed
-                store.update(id, t, body)
             }
-            syncNow()
-        }
-    }
-
-    fun delete(id: String) {
-        viewModelScope.launch {
-            if (store.delete(id)) syncNow()
         }
     }
 }
