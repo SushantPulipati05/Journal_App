@@ -17,6 +17,7 @@ import (
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/config"
 	"github.com/SushantPulipati05/journal-server/internal/dbmigrate"
+	"github.com/SushantPulipati05/journal-server/internal/mail"
 )
 
 func main() {
@@ -71,15 +72,26 @@ func run() error {
 	}
 
 	server := api.NewServer(pool, logger, tokens, cfg.TrustProxy)
-	if cfg.GoogleClientID != "" {
-		google, err := auth.NewGoogleVerifier(ctx, cfg.GoogleClientID)
+	if len(cfg.GoogleClientIDs) > 0 {
+		google, err := auth.NewGoogleVerifier(ctx, cfg.GoogleClientIDs)
 		if err != nil {
 			return fmt.Errorf("google verifier: %w", err)
 		}
 		server.WithGoogle(google)
-		logger.Info("google sign-in enabled")
+		logger.Info("google sign-in enabled", "client_ids", len(cfg.GoogleClientIDs))
 	} else {
 		logger.Warn("GOOGLE_CLIENT_ID not set: google sign-in is disabled")
+	}
+
+	switch {
+	case cfg.ResendAPIKey != "":
+		server.WithMailer(mail.NewResend(cfg.ResendAPIKey, cfg.EmailFrom))
+		logger.Info("password reset emails enabled", "from", cfg.EmailFrom)
+	case cfg.Env != "production":
+		server.WithMailer(mail.LogMailer{Logger: logger})
+		logger.Warn("RESEND_API_KEY not set: reset codes will be printed to this log (development only)")
+	default:
+		logger.Warn("RESEND_API_KEY not set: forgot password is disabled")
 	}
 
 	srv := &http.Server{

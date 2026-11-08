@@ -23,6 +23,8 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "dev.sushnt.journal"
             packageVersion = "1.0.0"
+            // The small local web server used by "Sign in with Google".
+            modules("jdk.httpserver")
         }
     }
 }

@@ -82,6 +82,18 @@ class JournalApi(
             plain.post("$baseUrl/auth/google") { jsonBody(GoogleSignInRequest(idToken)) }
         }
 
+    /** Asks the server to email a 6-digit reset code. Succeeds even for unknown emails (on purpose). */
+    suspend fun forgotPassword(email: String): ApiResult<Unit> =
+        call(authed = false, request = {
+            plain.post("$baseUrl/auth/password/forgot") { jsonBody(ForgotPasswordRequest(email)) }
+        }) { }
+
+    /** Sets a new password with the emailed code, and signs in. */
+    suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit> =
+        startSession {
+            plain.post("$baseUrl/auth/password/reset") { jsonBody(ResetPasswordRequest(email, code, newPassword)) }
+        }
+
     /** Signs out here no matter what, and tells the server on a best-effort basis. */
     suspend fun logout() {
         val tokens = tokenStore.load()

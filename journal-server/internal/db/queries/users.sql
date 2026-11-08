@@ -22,5 +22,9 @@ UPDATE users SET google_sub = $2, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
+-- name: UpdatePassword :exec
+UPDATE users SET password_hash = $2, updated_at = now()
+WHERE id = $1;
+
 -- name: DeleteUser :execrows
 DELETE FROM users WHERE id = $1;

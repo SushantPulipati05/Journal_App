@@ -34,6 +34,12 @@ class SessionManager(
     suspend fun loginWithGoogle(idToken: String): ApiResult<Unit> =
         signIn { api.googleSignIn(idToken) }
 
+    suspend fun requestPasswordReset(email: String): ApiResult<Unit> =
+        api.forgotPassword(email.trim())
+
+    suspend fun resetPassword(email: String, code: String, newPassword: String): ApiResult<Unit> =
+        signIn { api.resetPassword(email.trim(), code.trim(), newPassword) }
+
     private suspend fun signIn(request: suspend () -> ApiResult<Unit>): ApiResult<Unit> {
         // Hold the journal back until the account check below has finished, even if
         // an expired session left `ready` on.

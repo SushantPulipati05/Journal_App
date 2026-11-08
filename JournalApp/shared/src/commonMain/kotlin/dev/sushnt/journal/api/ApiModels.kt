@@ -20,6 +20,12 @@ data class LoginRequest(val email: String, val password: String)
 data class GoogleSignInRequest(@SerialName("id_token") val idToken: String)
 
 @Serializable
+data class ForgotPasswordRequest(val email: String)
+
+@Serializable
+data class ResetPasswordRequest(val email: String, val code: String, val password: String)
+
+@Serializable
 data class RefreshRequest(@SerialName("refresh_token") val refreshToken: String)
 
 @Serializable

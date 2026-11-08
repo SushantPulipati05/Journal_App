@@ -28,25 +28,34 @@ var ErrInvalidGoogleToken = errors.New("invalid google token")
 
 type googleVerifier struct {
 	validator *idtoken.Validator
-	audience  string
+	audiences []string
 }
 
-// NewGoogleVerifier accepts only tokens issued for audience, which is the
-// "Web application" OAuth client ID from Google Cloud Console. The Android app
-// asks Google for a token addressed to that same ID.
-func NewGoogleVerifier(ctx context.Context, audience string) (GoogleVerifier, error) {
+// NewGoogleVerifier accepts only tokens issued for one of audiences: our own
+// OAuth client IDs. Android uses the "Web application" client ID, the desktop
+// app uses the "Desktop app" client ID.
+func NewGoogleVerifier(ctx context.Context, audiences []string) (GoogleVerifier, error) {
+	if len(audiences) == 0 {
+		return nil, errors.New("no google client IDs given")
+	}
 	// A plain HTTP client: verifying needs only Google's public keys, no credentials.
 	v, err := idtoken.NewValidator(ctx, option.WithHTTPClient(&http.Client{Timeout: 10 * time.Second}))
 	if err != nil {
 		return nil, err
 	}
-	return &googleVerifier{validator: v, audience: audience}, nil
+	return &googleVerifier{validator: v, audiences: audiences}, nil
 }
 
 // Verify checks the signature (against Google's published keys), expiry,
 // audience and issuer, then returns the identity inside.
 func (g *googleVerifier) Verify(ctx context.Context, token string) (GoogleIdentity, error) {
-	p, err := g.validator.Validate(ctx, token, g.audience)
+	var p *idtoken.Payload
+	var err error
+	for _, aud := range g.audiences {
+		if p, err = g.validator.Validate(ctx, token, aud); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return GoogleIdentity{}, fmt.Errorf("%w: %v", ErrInvalidGoogleToken, err)
 	}

@@ -297,4 +297,40 @@ class JournalApiTest {
 
         assertEquals(listOf<String?>("Bearer A_TOKEN", "Bearer B_TOKEN"), seenAuth)
     }
+
+    @Test
+    fun passwordResetFlowSignsIn() = runTest {
+        val seen = mutableListOf<HttpRequestData>()
+        val engine = MockEngine { request ->
+            seen += request
+            when (request.url.encodedPath) {
+                "/auth/password/forgot" -> jsonResponse("""{"status":"ok"}""", HttpStatusCode.Accepted)
+                else -> jsonResponse(session("NEW_A", "NEW_R"))
+            }
+        }
+        val store = InMemoryTokenStore()
+        val api = JournalApi(BASE, store, engine)
+
+        assertIs<ApiResult.Ok<Unit>>(api.forgotPassword("a@b.c"))
+        assertNull(store.load(), "asking for a code must not sign in")
+
+        assertIs<ApiResult.Ok<Unit>>(api.resetPassword("a@b.c", "123456", "new-password"))
+        assertEquals(Tokens("NEW_A", "NEW_R"), store.load())
+        assertTrue(seen.last().bodyText().contains(""""code":"123456""""))
+    }
+
+    @Test
+    fun wrongResetCodeIsAServerError() = runTest {
+        val engine = MockEngine {
+            jsonResponse("""{"error":"invalid or expired code"}""", HttpStatusCode.BadRequest)
+        }
+        val store = InMemoryTokenStore()
+        val api = JournalApi(BASE, store, engine)
+
+        val result = api.resetPassword("a@b.c", "000000", "new-password")
+
+        assertIs<ApiResult.Err>(result)
+        assertEquals(ApiError.Server(400, "invalid or expired code"), result.error)
+        assertNull(store.load())
+    }
 }

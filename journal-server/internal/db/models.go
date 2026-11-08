@@ -21,6 +21,16 @@ type Entry struct {
 	Version   int64      `json:"version"`
 }
 
+type PasswordReset struct {
+	ID        uuid.UUID  `json:"id"`
+	UserID    uuid.UUID  `json:"user_id"`
+	CodeHash  string     `json:"code_hash"`
+	Attempts  int32      `json:"attempts"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	UsedAt    *time.Time `json:"used_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID        uuid.UUID  `json:"id"`
 	UserID    uuid.UUID  `json:"user_id"`

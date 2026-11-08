@@ -22,3 +22,6 @@ node_modules/
 keystore.properties
 *.jks
 *.keystore
+
+# Desktop Google sign-in client (see shared/src/jvmMain/resources)
+google-desktop.properties

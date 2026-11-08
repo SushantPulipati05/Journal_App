@@ -12,6 +12,7 @@ import (
 
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/db"
+	"github.com/SushantPulipati05/journal-server/internal/mail"
 )
 
 // Server holds everything the handlers need.
@@ -26,6 +27,9 @@ type Server struct {
 
 	// google verifies "Sign in with Google" tokens. nil = Google sign-in is off.
 	google auth.GoogleVerifier
+
+	// mailer sends password-reset codes. nil = "forgot password" is off.
+	mailer mail.Mailer
 }
 
 // trustProxy should be true only when the server runs behind a load balancer
@@ -48,6 +52,12 @@ func (s *Server) WithGoogle(v auth.GoogleVerifier) *Server {
 	return s
 }
 
+// WithMailer turns on the "forgot password" endpoints.
+func (s *Server) WithMailer(m mail.Mailer) *Server {
+	s.mailer = m
+	return s
+}
+
 // Routes wires URLs to handler methods, wrapped in middleware.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -60,6 +70,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/login", s.rateLimit(s.handleLogin))
 	mux.HandleFunc("POST /auth/google", s.rateLimit(s.handleGoogle))
 	mux.HandleFunc("POST /auth/refresh", s.rateLimit(s.handleRefresh))
+	mux.HandleFunc("POST /auth/password/forgot", s.rateLimit(s.handleForgotPassword))
+	mux.HandleFunc("POST /auth/password/reset", s.rateLimit(s.handleResetPassword))
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 
 	// The signed-in user's own account.

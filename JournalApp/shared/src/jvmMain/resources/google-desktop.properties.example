@@ -1,0 +1,7 @@
+# Copy this file to google-desktop.properties (same folder) and fill it in.
+# Google Cloud Console (your Firebase project) -> APIs & Services -> Credentials
+# -> Create credentials -> OAuth client ID -> Application type: Desktop app.
+# Google treats a desktop app's secret as not confidential, but keep the real
+# file out of git anyway (it's in .gitignore).
+clientId=
+clientSecret=
