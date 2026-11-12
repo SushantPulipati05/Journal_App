@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream }
+enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream, Image }
 
 /**
  * Simple line icons drawn on a 24×24 grid (same shapes as the mockups),
@@ -60,6 +60,17 @@ fun LineIcon(glyph: Glyph, tint: Color, size: Dp = 18.dp, strokeWidth: Float = 1
             }
             Glyph.Back -> line(15f, 18f, 9f, 12f, 15f, 6f)
             Glyph.Forward -> line(9f, 18f, 15f, 12f, 9f, 6f)
+            Glyph.Image -> {
+                drawRoundRect(
+                    tint,
+                    topLeft = p(3f, 5f),
+                    size = Size(18f * s, 15f * s),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5f * s, 2.5f * s),
+                    style = stroke,
+                )
+                circle(9f, 10.5f, 1.8f)
+                line(21f, 16f, 15.8f, 10.8f, 7f, 19.6f)
+            }
             Glyph.Close -> {
                 line(6f, 6f, 18f, 18f)
                 line(18f, 6f, 6f, 18f)

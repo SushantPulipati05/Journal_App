@@ -16,6 +16,7 @@ class SessionManager(
     private val store: EntryStore,
     private val sync: SyncEngine,
     private val backgroundSync: BackgroundSync,
+    private val photos: PhotoStore? = null,
 ) {
     // Becomes true only after sign-in has fully finished (including the
     // "is this the same account as before?" check), so the list never flashes
@@ -73,6 +74,7 @@ class SessionManager(
     private suspend fun forgetLocalData() {
         backgroundSync.cancel()
         store.clear()
+        photos?.clear()
         tokens.setLastUserId(null)
     }
 
@@ -82,6 +84,7 @@ class SessionManager(
             // A different account than last time: drop the old account's local copy.
             if (tokens.lastUserId() != me.value.id) {
                 store.clear()
+                photos?.clear()
                 tokens.setLastUserId(me.value.id)
             }
         }

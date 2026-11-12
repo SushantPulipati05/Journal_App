@@ -66,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.sushnt.journal.data.AppPrefs
 import dev.sushnt.journal.data.Entry
+import dev.sushnt.journal.data.photoIds
+import dev.sushnt.journal.data.withoutPhotos
+import androidx.compose.foundation.layout.aspectRatio
 
 /** The Journals tab: everything you've written, newest first, grouped by day. */
 @Composable
@@ -319,15 +322,31 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (entry.body.isNotBlank()) {
+        val preview = remember(entry.body) { entry.body.withoutPhotos().trim() }
+        val photoList = remember(entry.body) { photoIds(entry.body) }
+        if (preview.isNotBlank()) {
             Text(
-                entry.body.trim(),
+                preview,
                 color = JournalColors.Preview,
                 fontSize = 14.sp,
                 lineHeight = 21.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+        // Up to 4 small squares; "+3" when there are more.
+        if (photoList.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                val shown = if (photoList.size > 4) photoList.take(3) else photoList
+                shown.forEach { id -> PhotoThumb(id, Modifier.weight(1f)) }
+                if (photoList.size > 4) {
+                    Box(
+                        Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1A2132)),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("+${photoList.size - 3}", color = Color(0xFFC9CEDB), fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                }
+                repeat(4 - shown.size - (if (photoList.size > 4) 1 else 0)) { Spacer(Modifier.weight(1f)) }
+            }
         }
     }
 }

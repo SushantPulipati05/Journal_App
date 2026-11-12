@@ -30,6 +30,8 @@ class SyncEngine(
     private val api: JournalApi,
     private val store: EntryStore,
     private val batchSize: Int = 100,
+    /** Photo files go after the entries. null in tests. */
+    private val photoSync: PhotoSync? = null,
 ) {
     // Two syncs at once would push the same entries twice; make them take turns.
     private val lock = Mutex()
@@ -82,6 +84,16 @@ class SyncEngine(
                     if (!page.hasMore || page.nextCursor <= cursor) break
                     cursor = page.nextCursor
                 }
+            }
+        }
+        // ----- photos (never fails the entry sync) -----
+        if (photoSync != null) {
+            try {
+                photoSync.sync()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // e.g. disk full; the next sync tries again
             }
         }
         SyncResult.Done(pushed, pulled, failed)

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
+import dev.sushnt.journal.data.withoutPhotos
 import dev.sushnt.journal.data.SyncController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -47,7 +48,7 @@ class EntriesViewModel(
     val sections: StateFlow<List<DaySection>> = combine(entries, _query) { list, q ->
         val words = q.trim().lowercase().split(' ').filter { it.isNotEmpty() }
         val matching = if (words.isEmpty()) list else list.filter { e ->
-            val text = (e.title + " " + e.body).lowercase()
+            val text = (e.title + " " + e.body.withoutPhotos()).lowercase()
             words.all { it in text }
         }
         val now = nowMillis()

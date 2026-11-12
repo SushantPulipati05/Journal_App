@@ -29,6 +29,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -73,15 +78,14 @@ fun WriteScreen(
     val status by vm.status.collectAsState()
     val words = remember(text) { wordCount(text) }
 
-    val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+    var addPhoto by remember { mutableStateOf(0) }
+    // A new page gets a fresh editor (and the cursor back at the top).
+    var page by remember { mutableStateOf(0) }
 
     // Opening the app (or this tab) drops you straight into typing.
-    LaunchedEffect(Unit) {
-        focus.requestFocus()
-        keyboard?.show()
-    }
+    LaunchedEffect(Unit) { keyboard?.show() }
 
     val bottomGap by animateDpAsState(
         when {
@@ -95,7 +99,6 @@ fun WriteScreen(
 
     val bodySize = prefs.textSize.sp
     val font = writingFont(prefs.serifFont)
-    val titleLook = remember(bodySize) { FirstLineAsTitle((bodySize * 1.3f).sp) }
     val writingStyle = TextStyle(
         color = JournalColors.Body,
         fontFamily = font,
@@ -128,31 +131,27 @@ fun WriteScreen(
             }
         }
 
-        // ---- the page
-        BasicTextField(
-            value = text,
-            onValueChange = vm::onTextChange,
-            modifier = Modifier
+        // ---- the page: text with photos between the paragraphs
+        Column(
+            Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(top = if (compact) 20.dp else 44.dp, bottom = 16.dp)
-                .focusRequester(focus)
-                .semantics { contentDescription = "Journal entry. The first line is the title." },
-            textStyle = writingStyle,
-            cursorBrush = SolidColor(JournalColors.Accent),
-            visualTransformation = titleLook,
-            decorationBox = { field ->
-                Box {
-                    if (text.isEmpty()) {
-                        Text(
-                            "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…",
-                            style = writingStyle.copy(color = JournalColors.Muted.copy(alpha = 0.55f)),
-                        )
-                    }
-                    field()
-                }
-            },
-        )
+                .verticalScroll(rememberScrollState())
+                .padding(top = if (compact) 20.dp else 44.dp, bottom = 16.dp),
+        ) {
+            key(page) {
+                EntryEditor(
+                    text = text,
+                    onTextChange = vm::onTextChange,
+                    textStyle = writingStyle,
+                    titleSize = (bodySize * 1.3f).sp,
+                    placeholder = "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…",
+                    addPhotoSignal = addPhoto,
+                    focusOnStart = true,
+                    minLastHeight = 240.dp,
+                )
+            }
+        }
 
         // ---- footer: "• NEW ENTRY · 12:13 AM    6 WORDS    1 MIN READ ...... New entry"
         Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Border))
@@ -171,6 +170,14 @@ fun WriteScreen(
                 FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
             }
             Spacer(Modifier.weight(1f))
+            // Adds photos where the cursor is.
+            TextButton(onClick = { addPhoto++ }) {
+                LineIcon(Glyph.Image, JournalColors.Accent)
+                if (!compact || !keyboardOpen) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("Photo", fontWeight = FontWeight.SemiBold)
+                }
+            }
             if (keyboardOpen) {
                 TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
                     Text("Done", fontWeight = FontWeight.SemiBold)
@@ -178,7 +185,7 @@ fun WriteScreen(
             } else if (text.isNotBlank()) {
                 TextButton(onClick = {
                     vm.newEntry()
-                    focus.requestFocus()
+                    page++ // fresh editor with the cursor on the empty page
                     keyboard?.show()
                 }) { Text("New entry", fontWeight = FontWeight.SemiBold) }
             } else {

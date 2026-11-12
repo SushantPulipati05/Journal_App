@@ -68,7 +68,7 @@ fun EntryScreen(
 
     val words = remember(text) { wordCount(text) }
     val size = prefs.textSize.sp
-    val titleLook = remember(size) { FirstLineAsTitle((size * 1.5f).sp) }
+    var addPhoto by remember { mutableStateOf(0) }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -84,6 +84,7 @@ fun EntryScreen(
                 IconAction(Glyph.Back, "Newer entry", JournalColors.Text, { sheet.onNewer?.invoke() }, enabled = sheet.onNewer != null)
                 IconAction(Glyph.Forward, "Older entry", JournalColors.Text, { sheet.onOlder?.invoke() }, enabled = sheet.onOlder != null)
             }
+            IconAction(Glyph.Image, "Add photos where the cursor is", JournalColors.Accent, { addPhoto++ })
             // Same as swiping the card away: it can be undone for a few seconds.
             IconAction(Glyph.Trash, "Delete entry", JournalColors.Danger, onDelete)
             if (sheet != null) IconAction(Glyph.Close, "Close (Esc)", JournalColors.Text, sheet.onClose)
@@ -109,21 +110,19 @@ fun EntryScreen(
                 fontSize = 13.sp,
             )
             Spacer(Modifier.height(18.dp))
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 420.dp) // so tapping below the last line still starts typing
-                    .semantics { contentDescription = "Entry text. Tap to edit." },
+            // Tap anywhere to edit; photos sit between the paragraphs.
+            EntryEditor(
+                text = text,
+                onTextChange = { text = it },
                 textStyle = TextStyle(
                     color = JournalColors.Body,
                     fontFamily = writingFont(prefs.serifFont),
                     fontSize = size.sp,
                     lineHeight = (size * 1.65f).sp,
                 ),
-                cursorBrush = SolidColor(JournalColors.Accent),
-                visualTransformation = titleLook,
+                titleSize = (size * 1.5f).sp,
+                addPhotoSignal = addPhoto,
+                minLastHeight = 320.dp, // so tapping below the last line still starts typing
             )
         }
     }

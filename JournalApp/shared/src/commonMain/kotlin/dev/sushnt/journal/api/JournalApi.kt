@@ -16,6 +16,8 @@ import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
@@ -135,6 +137,47 @@ class JournalApi(
                 parameter("limit", limit)
             }
         }) { it.body<PullResponse>() }
+
+    // ---------- photos ----------
+
+    /** Step 1 of an upload: tell the server about the photo and get a link to upload the file to. */
+    suspend fun createAttachment(request: CreateAttachmentRequest): ApiResult<CreateAttachmentResponse> =
+        call(authed = true, request = {
+            authed.post("$baseUrl/attachments") { jsonBody(request) }
+        }) { it.body<CreateAttachmentResponse>() }
+
+    /** Step 2: send the file straight to storage. No login token: the link itself is the permission. */
+    suspend fun uploadFile(url: String, bytes: ByteArray, contentType: String): ApiResult<Unit> =
+        call(authed = false, request = {
+            plain.put(url) {
+                contentType(ContentType.parse(contentType))
+                setBody(bytes)
+            }
+        }) { }
+
+    /** Step 3: the file is there; other devices may now see it. */
+    suspend fun completeAttachment(id: String): ApiResult<AttachmentDto> =
+        call(authed = true, request = {
+            authed.post("$baseUrl/attachments/$id/complete")
+        }) { it.body<AttachmentDto>() }
+
+    suspend fun deleteAttachment(id: String): ApiResult<Unit> =
+        call(authed = true, request = { authed.delete("$baseUrl/attachments/$id") }) { }
+
+    suspend fun pullAttachments(since: Long, limit: Int = 100): ApiResult<AttachmentPullResponse> =
+        call(authed = true, request = {
+            authed.get("$baseUrl/attachments/pull") {
+                parameter("since", since)
+                parameter("limit", limit)
+            }
+        }) { it.body<AttachmentPullResponse>() }
+
+    /** Downloads a photo: first a short-lived link from our server, then the file from storage. */
+    suspend fun downloadAttachment(id: String): ApiResult<ByteArray> {
+        val link = call(authed = true, request = { authed.get("$baseUrl/attachments/$id/url") }) { it.body<AttachmentUrlResponse>() }
+        if (link !is ApiResult.Ok) return link as ApiResult.Err
+        return call(authed = false, request = { plain.get(link.value.url) }) { it.bodyAsBytes() }
+    }
 
     fun close() {
         plain.close()

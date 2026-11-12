@@ -7,6 +7,8 @@ import dev.sushnt.journal.api.TokenStore
 import dev.sushnt.journal.data.EntryStore
 import dev.sushnt.journal.data.PlatformConfig
 import dev.sushnt.journal.data.PrefsStore
+import dev.sushnt.journal.data.PhotoStore
+import dev.sushnt.journal.data.PhotoSync
 import dev.sushnt.journal.data.SessionManager
 import dev.sushnt.journal.data.SqliteTokenStore
 import dev.sushnt.journal.data.SyncController
@@ -38,9 +40,11 @@ private fun appModule(config: PlatformConfig) = module {
     single { EntryStore.open(BundledSQLiteDriver(), "${config.dataDir}/journal.db") }
     single { JournalApi(ApiConfig.BASE_URL, get()) }
     single { PrefsStore.open(BundledSQLiteDriver(), "${config.dataDir}/prefs.db") }
-    single { SyncEngine(get(), get()) }
+    single { PhotoStore.open(BundledSQLiteDriver(), config.dataDir) }
+    single { PhotoSync(get(), get(), get()) }
+    single { SyncEngine(get(), get(), photoSync = get()) }
     single { SyncController(get(), get()) }
-    single { SessionManager(get(), get(), get(), get(), get()) }
+    single { SessionManager(get(), get(), get(), get(), get(), photos = get()) }
 
     viewModel { AuthViewModel(get()) }
     viewModel { EntriesViewModel(get(), get()) }

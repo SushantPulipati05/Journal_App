@@ -81,3 +81,46 @@ data class PullResponse(
 
 @Serializable
 internal data class ErrorDto(val error: String)
+
+// ---------- photos ----------
+
+@Serializable
+data class AttachmentDto(
+    val id: String,
+    @SerialName("entry_id") val entryId: String,
+    @SerialName("content_type") val contentType: String = "image/jpeg",
+    @SerialName("size_bytes") val sizeBytes: Long = 0,
+    val width: Int = 0,
+    val height: Int = 0,
+    val position: Int = 0,
+    @SerialName("deleted_at") val deletedAt: String? = null,
+    val version: Long = 0,
+)
+
+@Serializable
+data class CreateAttachmentRequest(
+    val id: String,
+    @SerialName("entry_id") val entryId: String,
+    @SerialName("content_type") val contentType: String,
+    @SerialName("size_bytes") val sizeBytes: Long,
+    val width: Int,
+    val height: Int,
+    val position: Int,
+)
+
+@Serializable
+data class CreateAttachmentResponse(
+    val attachment: AttachmentDto,
+    val uploaded: Boolean,
+    @SerialName("upload_url") val uploadUrl: String? = null,
+)
+
+@Serializable
+data class AttachmentUrlResponse(val url: String)
+
+@Serializable
+data class AttachmentPullResponse(
+    val attachments: List<AttachmentDto>,
+    @SerialName("next_cursor") val nextCursor: Long,
+    @SerialName("has_more") val hasMore: Boolean,
+)

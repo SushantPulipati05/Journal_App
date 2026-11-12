@@ -83,6 +83,8 @@ import androidx.compose.ui.unit.sp
 import dev.sushnt.journal.data.AppPrefs
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.JournalsView
+import dev.sushnt.journal.data.photoIds
+import dev.sushnt.journal.data.withoutPhotos
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -364,9 +366,11 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
         label = "card border",
     )
     val shape = RoundedCornerShape(16.dp)
-    val text = remember(entry.title, entry.body) { joinEntryText(entry.title, entry.body).trim() }
+    val text = remember(entry.title, entry.body) { joinEntryText(entry.title, entry.body).withoutPhotos().trim() }
+    val preview = remember(entry.body) { entry.body.withoutPhotos().trim() }
+    val photoList = remember(entry.body) { photoIds(entry.body) }
     val words = remember(text) { wordCount(text) }
-    val asQuote = words in 1..25 // a one-liner reads better as a quote than as a title
+    val asQuote = words in 1..25 && photoList.isEmpty() // a one-liner reads better as a quote than as a title
 
     Column(
         modifier
@@ -382,6 +386,24 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
             .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // The first photo is the card's cover.
+        if (photoList.isNotEmpty()) {
+            Box {
+                PhotoView(photoList.first(), maxHeight = 260.dp, corner = 12.dp)
+                Text(
+                    if (photoList.size == 1) "1 photo" else "${photoList.size} photos",
+                    color = JournalColors.Text,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(8.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xBF0B0E17))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 shortDayLabel(entry.createdAt).uppercase(),
@@ -415,9 +437,9 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (entry.body.isNotBlank()) {
+            if (preview.isNotBlank()) {
                 Text(
-                    entry.body.trim(),
+                    preview,
                     color = JournalColors.Preview,
                     fontFamily = writingFont(prefs.serifFont),
                     fontSize = 15.sp,
@@ -536,12 +558,15 @@ private fun TimelineEntry(entry: Entry, prefs: AppPrefs, onClick: () -> Unit) {
             Spacer(Modifier.height(8.dp))
         }
         if (entry.body.isNotBlank()) {
-            Text(
-                entry.body.trim(),
-                color = JournalColors.Body,
-                fontFamily = writingFont(prefs.serifFont),
-                fontSize = (size - 1).sp,
-                lineHeight = ((size - 1) * 1.7f).sp,
+            // The whole entry, photos in place.
+            EntryBodyView(
+                entry.body,
+                TextStyle(
+                    color = JournalColors.Body,
+                    fontFamily = writingFont(prefs.serifFont),
+                    fontSize = (size - 1).sp,
+                    lineHeight = ((size - 1) * 1.7f).sp,
+                ),
             )
         }
     }
