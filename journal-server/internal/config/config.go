@@ -33,20 +33,38 @@ type Config struct {
 	// is off in production.
 	ResendAPIKey string
 	EmailFrom    string
+
+	// Photo storage in any S3-compatible bucket (Backblaze B2, Cloudflare R2...).
+	// All five set = photos on; any missing = off.
+	S3Endpoint        string
+	S3Region          string
+	S3AccessKeyID     string
+	S3SecretAccessKey string
+	S3Bucket          string
+}
+
+// PhotosEnabled reports whether all photo storage settings are present.
+func (c Config) PhotosEnabled() bool {
+	return c.S3Endpoint != "" && c.S3Region != "" && c.S3AccessKeyID != "" && c.S3SecretAccessKey != "" && c.S3Bucket != ""
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		Env:             getEnv("APP_ENV", "development"),
-		Port:            getEnv("PORT", "9090"),
-		DatabaseURL:     os.Getenv("DATABASE_URL"),
-		JWTSecret:       os.Getenv("JWT_SECRET"),
-		AccessTokenTTL:  15 * time.Minute,
-		TrustProxy:      os.Getenv("TRUST_PROXY") == "true",
-		RunMigrations:   os.Getenv("RUN_MIGRATIONS") == "true",
-		GoogleClientIDs: splitList(os.Getenv("GOOGLE_CLIENT_ID")),
-		ResendAPIKey:    os.Getenv("RESEND_API_KEY"),
-		EmailFrom:       getEnv("EMAIL_FROM", "Journal <onboarding@resend.dev>"),
+		Env:               getEnv("APP_ENV", "development"),
+		Port:              getEnv("PORT", "9090"),
+		DatabaseURL:       os.Getenv("DATABASE_URL"),
+		JWTSecret:         os.Getenv("JWT_SECRET"),
+		AccessTokenTTL:    15 * time.Minute,
+		TrustProxy:        os.Getenv("TRUST_PROXY") == "true",
+		RunMigrations:     os.Getenv("RUN_MIGRATIONS") == "true",
+		GoogleClientIDs:   splitList(os.Getenv("GOOGLE_CLIENT_ID")),
+		ResendAPIKey:      os.Getenv("RESEND_API_KEY"),
+		EmailFrom:         getEnv("EMAIL_FROM", "Journal <onboarding@resend.dev>"),
+		S3Endpoint:        os.Getenv("S3_ENDPOINT"),
+		S3Region:          os.Getenv("S3_REGION"),
+		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
+		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		S3Bucket:          os.Getenv("S3_BUCKET"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

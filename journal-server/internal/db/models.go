@@ -10,6 +10,21 @@ import (
 	"github.com/google/uuid"
 )
 
+type Attachment struct {
+	ID          uuid.UUID  `json:"id"`
+	UserID      uuid.UUID  `json:"user_id"`
+	EntryID     uuid.UUID  `json:"entry_id"`
+	ContentType string     `json:"content_type"`
+	SizeBytes   int64      `json:"size_bytes"`
+	Width       int32      `json:"width"`
+	Height      int32      `json:"height"`
+	Position    int32      `json:"position"`
+	Uploaded    bool       `json:"uploaded"`
+	CreatedAt   time.Time  `json:"created_at"`
+	DeletedAt   *time.Time `json:"deleted_at"`
+	Version     int64      `json:"version"`
+}
+
 type Entry struct {
 	ID        uuid.UUID  `json:"id"`
 	UserID    uuid.UUID  `json:"user_id"`

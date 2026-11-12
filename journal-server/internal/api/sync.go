@@ -103,6 +103,7 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 	q := s.queries.WithTx(tx)
 	now := time.Now()
 	results := make([]pushResult, 0, len(req.Changes))
+	var removedPhotos []uuid.UUID
 	for _, c := range req.Changes {
 		res, err := applyChange(ctx, q, userID, c, now)
 		if err != nil {
@@ -115,6 +116,15 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 			s.serverError(w, r, err)
 			return
 		}
+		// An entry that was just deleted takes its photos with it.
+		if res.Status == statusApplied && c.DeletedAt != nil {
+			ids, err := q.DeleteEntryAttachments(ctx, db.DeleteEntryAttachmentsParams{EntryID: c.ID, UserID: userID})
+			if err != nil {
+				s.serverError(w, r, err)
+				return
+			}
+			removedPhotos = append(removedPhotos, ids...)
+		}
 		results = append(results, res)
 	}
 
@@ -122,6 +132,7 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	s.removeFiles(userID, removedPhotos)
 	writeJSON(w, http.StatusOK, pushResponse{Results: results})
 }
 

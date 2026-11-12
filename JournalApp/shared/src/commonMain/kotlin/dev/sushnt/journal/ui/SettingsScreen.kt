@@ -88,7 +88,14 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
             )
 
             // ---------- account card ----------
-            Row(Modifier.fillMaxWidth().card().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (state.profileSkeleton) Row(Modifier.fillMaxWidth().card().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                SkeletonCircle(52.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    SkeletonBlock(width = 130.dp, height = 15.dp)
+                    SkeletonBlock(width = 190.dp, height = 11.dp)
+                }
+            } else Row(Modifier.fillMaxWidth().card().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier.size(52.dp).clip(CircleShape).background(JournalColors.AccentContainer),
                     contentAlignment = Alignment.Center,
@@ -104,7 +111,7 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
                 Column(Modifier.weight(1f)) {
                     Text(state.name ?: "Your account", color = JournalColors.TextStrong, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                     Text(
-                        state.email ?: "Loading…",
+                        state.email ?: "Couldn't load your email",
                         color = JournalColors.Muted,
                         fontSize = 13.sp,
                         maxLines = 1,

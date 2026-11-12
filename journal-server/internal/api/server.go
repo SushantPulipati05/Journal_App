@@ -13,6 +13,7 @@ import (
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/db"
 	"github.com/SushantPulipati05/journal-server/internal/mail"
+	"github.com/SushantPulipati05/journal-server/internal/storage"
 )
 
 // Server holds everything the handlers need.
@@ -30,6 +31,9 @@ type Server struct {
 
 	// mailer sends password-reset codes. nil = "forgot password" is off.
 	mailer mail.Mailer
+
+	// store keeps photo files (S3-compatible: Backblaze B2). nil = photos are off.
+	store storage.Store
 }
 
 // trustProxy should be true only when the server runs behind a load balancer
@@ -58,6 +62,12 @@ func (s *Server) WithMailer(m mail.Mailer) *Server {
 	return s
 }
 
+// WithStorage turns on photo uploads.
+func (s *Server) WithStorage(st storage.Store) *Server {
+	s.store = st
+	return s
+}
+
 // Routes wires URLs to handler methods, wrapped in middleware.
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
@@ -81,6 +91,13 @@ func (s *Server) Routes() http.Handler {
 	// Sync: devices push offline changes and pull everyone else's.
 	mux.HandleFunc("POST /sync/push", s.requireUser(s.handlePush))
 	mux.HandleFunc("GET /sync/pull", s.requireUser(s.handlePull))
+
+	// Photos: announce + upload link, confirm, download link, delete, sync.
+	mux.HandleFunc("POST /attachments", s.requireUser(s.handleCreateAttachment))
+	mux.HandleFunc("POST /attachments/{id}/complete", s.requireUser(s.handleCompleteAttachment))
+	mux.HandleFunc("GET /attachments/{id}/url", s.requireUser(s.handleAttachmentURL))
+	mux.HandleFunc("DELETE /attachments/{id}", s.requireUser(s.handleDeleteAttachment))
+	mux.HandleFunc("GET /attachments/pull", s.requireUser(s.handlePullAttachments))
 
 	// Journal entries.
 	mux.HandleFunc("POST /entries", s.requireUser(s.handleCreateEntry))

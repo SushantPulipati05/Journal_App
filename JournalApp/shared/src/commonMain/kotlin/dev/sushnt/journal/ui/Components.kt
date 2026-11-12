@@ -119,16 +119,16 @@ fun Modifier.card(): Modifier = this
 
 /** A 44 dp icon-only button. [description] is what screen readers say. */
 @Composable
-fun IconAction(glyph: Glyph, description: String, tint: Color, onClick: () -> Unit) {
+fun IconAction(glyph: Glyph, description: String, tint: Color, onClick: () -> Unit, enabled: Boolean = true) {
     Box(
         Modifier
             .size(44.dp)
             .clip(RoundedCornerShape(12.dp))
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
-        LineIcon(glyph, tint)
+        LineIcon(glyph, if (enabled) tint else tint.copy(alpha = 0.3f))
     }
 }
 

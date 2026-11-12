@@ -49,6 +49,8 @@ fun EntryScreen(
     onDelete: () -> Unit,
     /** false when shown beside the list on a wide screen (nothing to go back to). */
     showBack: Boolean = true,
+    /** Desktop entry sheet: newer/older arrows and a close button. null = not in a sheet. */
+    sheet: SheetControls? = null,
 ) {
     PlatformBackHandler(enabled = showBack, onBack = onBack)
 
@@ -78,8 +80,13 @@ fun EntryScreen(
                 }
             }
             Spacer(Modifier.weight(1f))
+            if (sheet != null) {
+                IconAction(Glyph.Back, "Newer entry", JournalColors.Text, { sheet.onNewer?.invoke() }, enabled = sheet.onNewer != null)
+                IconAction(Glyph.Forward, "Older entry", JournalColors.Text, { sheet.onOlder?.invoke() }, enabled = sheet.onOlder != null)
+            }
             // Same as swiping the card away: it can be undone for a few seconds.
             IconAction(Glyph.Trash, "Delete entry", JournalColors.Danger, onDelete)
+            if (sheet != null) IconAction(Glyph.Close, "Close (Esc)", JournalColors.Text, sheet.onClose)
         }
 
         Column(
@@ -121,3 +128,10 @@ fun EntryScreen(
         }
     }
 }
+
+/** The buttons an entry gets when it's open as a sheet over the desktop Journals page. */
+class SheetControls(
+    val onNewer: (() -> Unit)?,
+    val onOlder: (() -> Unit)?,
+    val onClose: () -> Unit,
+)

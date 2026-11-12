@@ -21,7 +21,12 @@ data class SettingsUiState(
     val error: String? = null,
     /** Non-null while asking "N changes aren't synced, sign out anyway?". */
     val confirmSignOut: Int? = null,
-)
+    /** The name/email request is still running. */
+    val loadingProfile: Boolean = false,
+) {
+    /** Nothing to show yet: draw skeletons for the name and email. */
+    val profileSkeleton: Boolean get() = loadingProfile && email == null
+}
 
 class SettingsViewModel(
     private val session: SessionManager,
@@ -44,17 +49,22 @@ class SettingsViewModel(
     fun syncNow() = syncController.syncNow()
 
     fun load() {
-        // This ViewModel outlives a sign-out, so start fresh each time Settings opens:
-        // no old account's name/email, and no "busy" left over from the last sign-out.
-        _state.value = SettingsUiState()
+        // Nothing left over from last time (busy, errors). The name/email stay on screen
+        // while they refresh; sign-out wipes them with clear().
+        _state.update { it.copy(busy = false, error = null, confirmSignOut = null, loadingProfile = true) }
         viewModelScope.launch {
             when (val r = session.profile()) {
                 is ApiResult.Ok -> _state.update {
-                    it.copy(name = r.value.displayName.ifBlank { null }, email = r.value.email, error = null)
+                    it.copy(name = r.value.displayName.ifBlank { null }, email = r.value.email, error = null, loadingProfile = false)
                 }
-                is ApiResult.Err -> _state.update { it.copy(error = describe(r.error)) }
+                is ApiResult.Err -> _state.update { it.copy(error = describe(r.error), loadingProfile = false) }
             }
         }
+    }
+
+    /** After signing out: forget the old account's name and email. */
+    fun clear() {
+        _state.value = SettingsUiState()
     }
 
     fun requestSignOut() {

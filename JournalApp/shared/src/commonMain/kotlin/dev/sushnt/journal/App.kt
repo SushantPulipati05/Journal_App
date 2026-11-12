@@ -1,6 +1,8 @@
 package dev.sushnt.journal
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Column
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
@@ -75,6 +77,11 @@ import dev.sushnt.journal.data.SyncController
 import dev.sushnt.journal.ui.AuthScreen
 import dev.sushnt.journal.ui.EntriesViewModel
 import dev.sushnt.journal.ui.EntryScreen
+import dev.sushnt.journal.ui.EntrySheet
+import dev.sushnt.journal.ui.DesktopJournals
+import dev.sushnt.journal.data.JournalsView
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.draw.blur
 import dev.sushnt.journal.ui.HomeTab
 import dev.sushnt.journal.ui.JournalColors
 import dev.sushnt.journal.ui.JournalTheme
@@ -96,9 +103,15 @@ fun App() {
             val session = koinInject<SessionManager>()
             val signedIn by session.signedIn.collectAsState(initial = null)
             val write: WriteViewModel = koinViewModel()
+            val settings: SettingsViewModel = koinViewModel()
 
-            // The Write page lives as long as the app; never carry it into the next account.
-            LaunchedEffect(signedIn) { if (signedIn == false) write.reset() }
+            // These live as long as the app; never carry them into the next account.
+            LaunchedEffect(signedIn) {
+                if (signedIn == false) {
+                    write.reset()
+                    settings.clear()
+                }
+            }
 
             when (signedIn) {
                 true -> Home(write)
@@ -170,6 +183,7 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
                     write.flush()
                     prefsUpdate(prefsStore) { it.copy(sidebarCollapsed = collapsed) }
                 },
+                onJournalsView = { view -> prefsUpdate(prefsStore) { it.copy(journalsView = view) } },
             )
         } else {
             CompactHome(
@@ -313,6 +327,7 @@ private fun WideHome(
     onCloseSettings: () -> Unit,
     onRead: (String?) -> Unit,
     onToggleSidebar: (Boolean) -> Unit,
+    onJournalsView: (JournalsView) -> Unit,
     settings: SettingsViewModel = koinViewModel(),
 ) {
     val syncController = koinInject<SyncController>()
@@ -323,6 +338,9 @@ private fun WideHome(
     val streak by journals.streak.collectAsState()
     val account by settings.state.collectAsState()
     var focusSearch by remember { mutableStateOf(0) }
+    val sections by journals.sections.collectAsState()
+    // The arrows in the entry sheet follow what the page shows (newest first, search applied).
+    val pageOrder = remember(sections) { sections.flatMap { it.entries } }
 
     LaunchedEffect(Unit) { settings.load() } // the name shown in the sidebar
 
@@ -331,6 +349,9 @@ private fun WideHome(
         tab == HomeTab.Journals -> SidebarItem.Journals
         else -> SidebarItem.Write
     }
+    // Leaving Journals closes the entry sheet, so it doesn't pop up again on the way back.
+    LaunchedEffect(current) { if (current != SidebarItem.Journals) onRead(null) }
+
     val syncLine = when {
         syncing -> SyncLine("Syncing…", healthy = true)
         syncMessage != null -> SyncLine("Not synced: offline or server issue", healthy = false)
@@ -343,6 +364,11 @@ private fun WideHome(
             .fillMaxSize()
             // Keyboard shortcuts: Ctrl+N new page, Ctrl+F search, Ctrl+\ fold the sidebar.
             .onPreviewKeyEvent { event ->
+                // Esc closes the open entry sheet.
+                if (event.type == KeyEventType.KeyDown && event.key == Key.Escape && reading != null && tab == HomeTab.Journals && !settingsOpen) {
+                    onRead(null)
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyDown || !(event.isCtrlPressed || event.isMetaPressed)) {
                     return@onPreviewKeyEvent false
                 }
@@ -382,6 +408,7 @@ private fun WideHome(
                     showStreak = prefs.showStreak,
                     sync = syncLine,
                     userName = userName,
+                    accountLoading = account.profileSkeleton,
                     onClose = { onToggleSidebar(true) },
                     onSelect = { item ->
                         when (item) {
@@ -396,14 +423,17 @@ private fun WideHome(
         }
 
         Box(Modifier.weight(1f).fillMaxHeight()) {
-        Column(Modifier.fillMaxSize()) {
+        // While an entry sheet is open, the page behind it softly blurs.
+        val sheetOpen = current == SidebarItem.Journals && reading != null
+        val blur by animateDpAsState(if (sheetOpen) 6.dp else 0.dp, Motion.standard(), label = "page blur")
+        Column(Modifier.fillMaxSize().blur(blur)) {
         // With the sidebar closed: just a slim bar (open-sidebar button, avatar) at the top...
         AnimatedVisibility(
             visible = !sidebarOpen,
             enter = expandVertically(Motion.standard()) + fadeIn(Motion.standard()),
             exit = shrinkVertically(Motion.standard()) + fadeOut(Motion.quick()),
         ) {
-            ClosedSidebarBar(userName, onOpenSidebar = { onToggleSidebar(false) }, onSettings = onOpenSettings)
+            ClosedSidebarBar(userName, account.profileSkeleton, onOpenSidebar = { onToggleSidebar(false) }, onSettings = onOpenSettings)
         }
 
         AnimatedContent(
@@ -428,60 +458,34 @@ private fun WideHome(
                     )
                 }
 
-                SidebarItem.Journals -> Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.width(380.dp).fillMaxHeight()) {
-                        JournalsScreen(
-                            vm = journals,
-                            prefs = prefs,
-                            onOpen = { onRead(it.id) },
-                            onSettings = onOpenSettings,
-                            compact = false,
-                            selectedId = reading?.id,
-                            focusSearchSignal = focusSearch,
-                            listState = listState,
-                            bottomPadding = if (sidebarOpen) null else 110.dp,
-                        )
-                    }
-                    VerticalLine()
-                    // Picking another entry cross-fades the reading pane.
-                    AnimatedContent(
-                        targetState = reading?.id,
-                        modifier = Modifier.weight(1f).fillMaxHeight(),
-                        transitionSpec = { fadeThrough() },
-                        label = "entry pane",
-                    ) { id ->
-                        val entry = id?.let { wanted -> entries.find { it.id == wanted } }
-                        Box(Modifier.fillMaxSize()) {
-                        if (entry != null) {
-                            Centered(760.dp) {
-                                key(entry.id) { EntryScreen(
-                                    entry = entry,
-                                    prefs = prefs,
-                                    onBack = { onRead(null) },
-                                    onSaveText = { text -> journals.saveEdit(entry.id, text) },
-                                    onDelete = {
-                                        journals.deleteWithUndo(entry)
-                                        onRead(null)
-                                    },
-                                    showBack = false,
-                                ) }
-                            }
-                        } else {
-                            Text(
-                                if (entries.isEmpty()) "Your entries will appear here." else "Pick an entry to read it.",
-                                color = JournalColors.Muted,
-                                modifier = Modifier.align(Alignment.Center),
-                            )
-                        }
-                        }
-                    }
-                }
+                SidebarItem.Journals -> DesktopJournals(
+                    vm = journals,
+                    prefs = prefs,
+                    selectedId = reading?.id,
+                    onOpen = { onRead(it.id) },
+                    onViewChange = onJournalsView,
+                    focusSearchSignal = focusSearch,
+                    bottomPadding = if (sidebarOpen) 24.dp else 100.dp,
+                )
             }
         }
         }
+        // An entry opened from Journals: a sheet over the page.
+        EntrySheet(
+            entry = if (current == SidebarItem.Journals) reading else null,
+            order = pageOrder,
+            prefs = prefs,
+            onSelect = onRead,
+            onSaveText = { id, text -> journals.saveEdit(id, text) },
+            onDelete = { entry ->
+                journals.deleteWithUndo(entry)
+                onRead(null)
+            },
+        )
         // ...and the floating Write/Journals pill at the bottom, like on the phone.
-        AnimatedVisibility(
-            visible = !sidebarOpen && current != SidebarItem.Settings,
+        // (Full name: the plain version, not the Row one from the enclosing Row.)
+        androidx.compose.animation.AnimatedVisibility(
+            visible = !sidebarOpen && current != SidebarItem.Settings && !sheetOpen,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
             enter = slideInVertically(Motion.standard()) { it * 2 } + fadeIn(Motion.standard()),
             exit = slideOutVertically(Motion.quick()) { it * 2 } + fadeOut(Motion.quick()),

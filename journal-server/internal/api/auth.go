@@ -271,7 +271,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 // go with it through the ON DELETE CASCADE foreign keys. Google Play
 // requires apps that create accounts to offer this.
 func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.queries.DeleteUser(r.Context(), userIDFrom(r.Context()))
+	userID := userIDFrom(r.Context())
+	// Remember the photos first: their rows vanish with the account, the files in storage don't.
+	photos, err := s.queries.ListUserAttachmentIDs(r.Context(), userID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	rows, err := s.queries.DeleteUser(r.Context(), userID)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -280,5 +287,6 @@ func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "account not found")
 		return
 	}
+	s.removeFiles(userID, photos)
 	w.WriteHeader(http.StatusNoContent)
 }

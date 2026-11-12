@@ -19,6 +19,9 @@ enum class EntryTextSize(val label: String, val sp: Int) {
     ExtraLarge("Extra large", 25),
 }
 
+/** How the desktop Journals page lays out entries. */
+enum class JournalsView { Gallery, Timeline }
+
 /** Settings that belong to this device, not to the account. */
 data class AppPrefs(
     val textSize: EntryTextSize = EntryTextSize.Default,
@@ -28,6 +31,8 @@ data class AppPrefs(
     val continueLastEntry: Boolean = true,
     /** Desktop/tablet: the sidebar is folded down to icons. */
     val sidebarCollapsed: Boolean = false,
+    /** Desktop/tablet Journals page: cards or one long diary stream. */
+    val journalsView: JournalsView = JournalsView.Gallery,
 )
 
 /** Stores [AppPrefs] in a tiny SQLite file next to the journal. Survives sign-out. */
@@ -53,6 +58,7 @@ class PrefsStore(
             write("show_streak", next.showStreak.toString())
             write("continue_last", next.continueLastEntry.toString())
             write("sidebar_collapsed", next.sidebarCollapsed.toString())
+            write("journals_view", next.journalsView.name)
         }
     }
 
@@ -65,6 +71,7 @@ class PrefsStore(
             showStreak = map["show_streak"]?.toBooleanStrictOrNull() ?: defaults.showStreak,
             continueLastEntry = map["continue_last"]?.toBooleanStrictOrNull() ?: defaults.continueLastEntry,
             sidebarCollapsed = map["sidebar_collapsed"]?.toBooleanStrictOrNull() ?: defaults.sidebarCollapsed,
+            journalsView = JournalsView.entries.firstOrNull { it.name == map["journals_view"] } ?: defaults.journalsView,
         )
     }
 

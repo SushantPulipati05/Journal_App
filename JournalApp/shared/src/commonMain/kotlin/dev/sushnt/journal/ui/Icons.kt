@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-enum class Glyph { Pen, Book, Person, Search, Back, Check, Moon, More, Panel, Trash }
+enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream }
 
 /**
  * Simple line icons drawn on a 24×24 grid (same shapes as the mockups),
@@ -59,6 +59,27 @@ fun LineIcon(glyph: Glyph, tint: Color, size: Dp = 18.dp, strokeWidth: Float = 1
                 line(20f, 20f, 16.5f, 16.5f)
             }
             Glyph.Back -> line(15f, 18f, 9f, 12f, 15f, 6f)
+            Glyph.Forward -> line(9f, 18f, 15f, 12f, 9f, 6f)
+            Glyph.Close -> {
+                line(6f, 6f, 18f, 18f)
+                line(18f, 6f, 6f, 18f)
+            }
+            Glyph.Grid -> {
+                val r = androidx.compose.ui.geometry.CornerRadius(1.5f * s, 1.5f * s)
+                drawRoundRect(tint, topLeft = p(3f, 3f), size = Size(7f * s, 9f * s), cornerRadius = r, style = stroke)
+                drawRoundRect(tint, topLeft = p(14f, 3f), size = Size(7f * s, 5f * s), cornerRadius = r, style = stroke)
+                drawRoundRect(tint, topLeft = p(14f, 12f), size = Size(7f * s, 9f * s), cornerRadius = r, style = stroke)
+                drawRoundRect(tint, topLeft = p(3f, 16f), size = Size(7f * s, 5f * s), cornerRadius = r, style = stroke)
+            }
+            Glyph.Stream -> {
+                line(5f, 4f, 5f, 20f)
+                drawCircle(tint, radius = 1.6f * s, center = p(5f, 7f))
+                drawCircle(tint, radius = 1.6f * s, center = p(5f, 16f))
+                line(10f, 7f, 20f, 7f)
+                line(10f, 11f, 17f, 11f)
+                line(10f, 16f, 20f, 16f)
+                line(10f, 20f, 16f, 20f)
+            }
             Glyph.Check -> line(20f, 6f, 9f, 17f, 4f, 12f)
             Glyph.Moon -> drawArc(tint, 100f, 260f, false, topLeft = p(3f, 3f), size = Size(18f * s, 18f * s), style = stroke)
             Glyph.Panel -> {

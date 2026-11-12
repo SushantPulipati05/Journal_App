@@ -18,6 +18,7 @@ import (
 	"github.com/SushantPulipati05/journal-server/internal/config"
 	"github.com/SushantPulipati05/journal-server/internal/dbmigrate"
 	"github.com/SushantPulipati05/journal-server/internal/mail"
+	"github.com/SushantPulipati05/journal-server/internal/storage"
 )
 
 func main() {
@@ -92,6 +93,17 @@ func run() error {
 		logger.Warn("RESEND_API_KEY not set: reset codes will be printed to this log (development only)")
 	default:
 		logger.Warn("RESEND_API_KEY not set: forgot password is disabled")
+	}
+
+	if cfg.PhotosEnabled() {
+		store, err := storage.NewS3(cfg.S3Endpoint, cfg.S3Region, cfg.S3AccessKeyID, cfg.S3SecretAccessKey, cfg.S3Bucket)
+		if err != nil {
+			return fmt.Errorf("photo storage: %w", err)
+		}
+		server.WithStorage(store)
+		logger.Info("photo storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
+	} else {
+		logger.Warn("S3_* settings missing: photos are disabled")
 	}
 
 	srv := &http.Server{

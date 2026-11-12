@@ -55,6 +55,8 @@ fun Sidebar(
     showStreak: Boolean,
     sync: SyncLine,
     userName: String?,
+    /** Name not fetched yet: grey placeholders instead of "Your account". */
+    accountLoading: Boolean,
     onClose: () -> Unit,
     onSelect: (SidebarItem) -> Unit,
 ) {
@@ -132,10 +134,11 @@ fun Sidebar(
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Avatar(userName, size = 32)
+            if (accountLoading) SkeletonCircle(32.dp) else Avatar(userName, size = 32)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(userName ?: "Your account", color = JournalColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (accountLoading) SkeletonBlock(Modifier.padding(top = 2.dp, bottom = 5.dp), width = 96.dp, height = 12.dp)
+                else Text(userName ?: "Your account", color = JournalColors.Text, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("Settings", color = if (inSettings) JournalColors.Accent else JournalColors.Muted, fontSize = 12.sp, maxLines = 1)
             }
         }
@@ -147,7 +150,7 @@ fun Sidebar(
  * the left, the app's name, and your avatar (Settings) on the right. Nothing else.
  */
 @Composable
-fun ClosedSidebarBar(userName: String?, onOpenSidebar: () -> Unit, onSettings: () -> Unit) {
+fun ClosedSidebarBar(userName: String?, accountLoading: Boolean, onOpenSidebar: () -> Unit, onSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +161,7 @@ fun ClosedSidebarBar(userName: String?, onOpenSidebar: () -> Unit, onSettings: (
         Spacer(Modifier.width(8.dp))
         Text("JOURNAL", color = JournalColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
         Spacer(Modifier.weight(1f))
-        Avatar(userName, size = 34, description = "Account and settings", onClick = onSettings)
+        if (accountLoading) SkeletonCircle(34.dp) else Avatar(userName, size = 34, description = "Account and settings", onClick = onSettings)
     }
 }
 

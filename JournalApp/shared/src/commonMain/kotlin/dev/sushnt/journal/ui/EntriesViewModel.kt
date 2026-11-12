@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
@@ -32,7 +33,10 @@ class EntriesViewModel(
     private var syncJob: Job? = null
 
     /** Every entry, newest first (minus one waiting to be deleted). Reloads on every database change. */
-    val entries: StateFlow<List<Entry>> = combine(store.revision.map { store.list() }, _pendingDelete) { list, pending ->
+    /** false until the entries have been read from the device once. */
+    private val _loaded = MutableStateFlow(false)
+
+    val entries: StateFlow<List<Entry>> = combine(store.revision.map { store.list() }.onEach { _loaded.value = true }, _pendingDelete) { list, pending ->
         if (pending == null) list else list.filter { it.id != pending.id }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -62,6 +66,14 @@ class EntriesViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val syncing: StateFlow<Boolean> = syncController.syncing
+
+    /**
+     * Show skeletons instead of "Nothing here yet": while the device copy is being read, and
+     * on a fresh sign-in while the first sync is still downloading the entries.
+     */
+    val loading: StateFlow<Boolean> = combine(_loaded, entries, syncController.syncing, syncController.lastSyncedAt) { loaded, list, syncing, synced ->
+        !loaded || (list.isEmpty() && syncing && synced == null)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val message: StateFlow<String?> = syncController.message
 
     fun setQuery(q: String) {

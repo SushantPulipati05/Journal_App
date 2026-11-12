@@ -92,6 +92,7 @@ fun JournalsScreen(
     val syncing by vm.syncing.collectAsState()
     val message by vm.message.collectAsState()
     val pendingDelete by vm.pendingDelete.collectAsState()
+    val loading by vm.loading.collectAsState()
     val snackbar = remember { SnackbarHostState() }
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(focusSearchSignal) {
@@ -116,11 +117,15 @@ fun JournalsScreen(
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f).padding(start = 4.dp)) {
                         Text("Journals", color = JournalColors.TextStrong, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-                        Text(
-                            if (all.size == 1) "1 entry" else "${all.size} entries",
-                            color = JournalColors.Muted,
-                            fontSize = 13.sp,
-                        )
+                        if (loading) {
+                            SkeletonBlock(Modifier.padding(top = 5.dp), width = 72.dp, height = 11.dp)
+                        } else {
+                            Text(
+                                if (all.size == 1) "1 entry" else "${all.size} entries",
+                                color = JournalColors.Muted,
+                                fontSize = 13.sp,
+                            )
+                        }
                     }
                     if (compact) SettingsButton(onSettings)
                 }
@@ -140,7 +145,13 @@ fun JournalsScreen(
                 item(key = "streak") { Box(Modifier.animateItem()) { StreakCard(streak) } }
             }
 
-            if (sections.isEmpty()) {
+            if (loading) {
+                // Grey cards shaped like real ones until the entries arrive; they fade into the real list.
+                item(key = "skeleton-header") { SkeletonBlock(Modifier.animateItem().padding(start = 4.dp, top = 10.dp), width = 56.dp, height = 10.dp) }
+                items(4, key = { "skeleton-$it" }) { i ->
+                    SkeletonEntryCard(Modifier.animateItem(), lines = SkeletonLines[i])
+                }
+            } else if (sections.isEmpty()) {
                 item {
                     Text(
                         if (all.isEmpty()) "Nothing here yet.\nWhat you write on the Write tab shows up here."
@@ -152,7 +163,7 @@ fun JournalsScreen(
                 }
             }
 
-            sections.forEach { section ->
+            if (!loading) sections.forEach { section ->
                 item(key = "header-${section.header}") {
                     SectionLabel(section.header, Modifier.animateItem().padding(top = 10.dp))
                 }
@@ -320,3 +331,6 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
         }
     }
 }
+
+/** How many text lines each placeholder card has, so they don't all look the same. */
+private val SkeletonLines = listOf(2, 1, 3, 2)
