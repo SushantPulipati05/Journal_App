@@ -123,6 +123,9 @@ fun EntryScreen(
                 titleSize = (size * 1.5f).sp,
                 addPhotoSignal = addPhoto,
                 minLastHeight = 320.dp, // so tapping below the last line still starts typing
+                photoMaxHeight = if (sheet != null) 260.dp else 300.dp,
+                photoMaxWidth = if (sheet != null) 440.dp else 480.dp,
+                refocusAfterPhoto = sheet != null, // phone: keep the keyboard down
             )
         }
     }

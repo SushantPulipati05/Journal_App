@@ -69,8 +69,8 @@ fun Sidebar(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(Modifier.fillMaxWidth().padding(start = 10.dp, bottom = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(JournalColors.Accent))
-            Spacer(Modifier.width(10.dp))
+            BrandMark(24.dp)
+            Spacer(Modifier.width(8.dp))
             Text(
                 "Journal",
                 color = JournalColors.TextStrong,
@@ -157,8 +157,8 @@ fun ClosedSidebarBar(userName: String?, accountLoading: Boolean, onOpenSidebar: 
     ) {
         IconAction(Glyph.Panel, "Open sidebar", Color(0xFF9AA3B8), onOpenSidebar)
         Spacer(Modifier.width(6.dp))
-        Box(Modifier.size(6.dp).clip(CircleShape).background(JournalColors.Accent))
-        Spacer(Modifier.width(8.dp))
+        BrandMark(18.dp)
+        Spacer(Modifier.width(6.dp))
         Text("JOURNAL", color = JournalColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
         Spacer(Modifier.weight(1f))
         if (accountLoading) SkeletonCircle(34.dp) else Avatar(userName, size = 34, description = "Account and settings", onClick = onSettings)

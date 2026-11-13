@@ -37,3 +37,7 @@ actual fun rememberPhotoPicker(onPicked: (List<ByteArray>) -> Unit): () -> Unit 
         }
     }
 }
+
+/** Desktop: no camera; the Photo button opens the file picker straight away. */
+@Composable
+actual fun rememberCameraCapture(onTaken: (ByteArray) -> Unit): (() -> Unit)? = null

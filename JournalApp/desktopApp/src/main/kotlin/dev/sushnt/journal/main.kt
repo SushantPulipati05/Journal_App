@@ -1,6 +1,8 @@
 package dev.sushnt.journal
 
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.dp
+import dev.sushnt.journal.ui.AppIcon
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
@@ -14,6 +16,7 @@ fun main() {
         Window(
             onCloseRequest = ::exitApplication,
             title = "Journal",
+            icon = rememberVectorPainter(AppIcon), // window + taskbar icon
             // Wide enough for the sidebar layout; shrinking it below ~840 px switches to the phone layout.
             state = rememberWindowState(width = 1200.dp, height = 800.dp),
         ) {

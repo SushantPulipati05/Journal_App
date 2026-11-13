@@ -111,23 +111,54 @@ fun WriteScreen(
             .fillMaxSize()
             .padding(horizontal = if (compact) 24.dp else 8.dp),
     ) {
-        // ---- header: "• DAILY JOURNAL   Monday, 9 November" ...... "✓ Saved"
-        Row(
-            Modifier.fillMaxWidth().padding(top = if (compact) 12.dp else 40.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
-            Spacer(Modifier.width(8.dp))
-            Text("DAILY JOURNAL", color = JournalColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, maxLines = 1)
-            Spacer(Modifier.width(12.dp))
-            Text(longDateLabel(startedAt), color = JournalColors.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-            Spacer(Modifier.weight(1f))
-            AnimatedVisibility(visible = text.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
-                SaveIndicator(status)
+        if (compact) {
+            // ---- phone header: small weekday over the date; a ✓ when saved; your avatar.
+            val day = localDate(startedAt)
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        day.dayOfWeek.name,
+                        color = JournalColors.Accent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.6.sp,
+                        maxLines = 1,
+                    )
+                    Text(
+                        "${day.day} ${day.month.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                        color = JournalColors.TextStrong,
+                        fontFamily = writingFont(true),
+                        fontSize = 22.sp,
+                        maxLines = 1,
+                    )
+                }
+                AnimatedVisibility(visible = text.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                    SaveIndicator(status, iconOnly = true)
+                }
+                if (!keyboardOpen) {
+                    Spacer(Modifier.width(10.dp))
+                    SettingsButton(onSettings)
+                }
             }
-            if (compact && !keyboardOpen) {
+        } else {
+            // ---- header: "• DAILY JOURNAL   Monday, 9 November" ...... "✓ Saved"
+            Row(
+                Modifier.fillMaxWidth().padding(top = if (compact) 12.dp else 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
+                Spacer(Modifier.width(8.dp))
+                Text("DAILY JOURNAL", color = JournalColors.Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.6.sp, maxLines = 1)
                 Spacer(Modifier.width(12.dp))
-                SettingsButton(onSettings)
+                Text(longDateLabel(startedAt), color = JournalColors.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                Spacer(Modifier.weight(1f))
+                AnimatedVisibility(visible = text.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                    SaveIndicator(status)
+                }
+                if (compact && !keyboardOpen) {
+                    Spacer(Modifier.width(12.dp))
+                    SettingsButton(onSettings)
+                }
             }
         }
 
@@ -137,9 +168,9 @@ fun WriteScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
-                .padding(top = if (compact) 20.dp else 44.dp, bottom = 16.dp),
+                .padding(top = if (compact) 20.dp else 24.dp, bottom = 16.dp),
         ) {
-            key(page) {
+            key(page, startedAt) { // a new entry (e.g. the + in the tab bar) gets a fresh, focused page
                 EntryEditor(
                     text = text,
                     onTextChange = vm::onTextChange,
@@ -149,47 +180,75 @@ fun WriteScreen(
                     addPhotoSignal = addPhoto,
                     focusOnStart = true,
                     minLastHeight = 240.dp,
+                    // Desktop: small photos so most of the window stays for writing.
+                    photoMaxHeight = if (compact) 300.dp else 240.dp,
+                    photoMaxWidth = if (compact) 480.dp else 420.dp,
+                    refocusAfterPhoto = !compact,
                 )
             }
         }
 
-        // ---- footer: "• NEW ENTRY · 12:13 AM    6 WORDS    1 MIN READ ...... New entry"
-        Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Border))
-        Row(
-            Modifier.fillMaxWidth().padding(top = 6.dp, bottom = bottomGap),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
-            Spacer(Modifier.width(8.dp))
-            FooterLabel(if (entryId == null) "New entry" else "Editing", JournalColors.Accent)
-            FooterLabel(" · ${timeLabel(startedAt)}", JournalColors.Muted)
-            Spacer(Modifier.width(18.dp))
-            FooterLabel(if (words == 1) "1 word" else "$words words", JournalColors.Muted)
-            if (!compact) {
+        if (compact) {
+            // ---- phone footer: "9:06 PM · 28 words" and a photo button. New entry lives on the
+            // + next to the tab bar. While typing this row sits right on top of the keyboard.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 2.dp, bottom = bottomGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "${timeLabel(startedAt)} · ${if (words == 1) "1 word" else "$words words"}",
+                    color = JournalColors.Muted,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                IconAction(Glyph.Image, "Add photo", Color(0xFFC9CEDB), { addPhoto++ })
+                if (keyboardOpen) {
+                    Spacer(Modifier.width(4.dp))
+                    TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
+                        Text("Done", fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        } else {
+            // ---- footer: "• NEW ENTRY · 12:13 AM    6 WORDS    1 MIN READ ...... New entry"
+            Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Border))
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp, bottom = bottomGap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(5.dp).clip(CircleShape).background(JournalColors.Accent))
+                Spacer(Modifier.width(8.dp))
+                FooterLabel(if (entryId == null) "New entry" else "Editing", JournalColors.Accent)
+                FooterLabel(" · ${timeLabel(startedAt)}", JournalColors.Muted)
                 Spacer(Modifier.width(18.dp))
-                FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
-            }
-            Spacer(Modifier.weight(1f))
-            // Adds photos where the cursor is.
-            TextButton(onClick = { addPhoto++ }) {
-                LineIcon(Glyph.Image, JournalColors.Accent)
-                if (!compact || !keyboardOpen) {
-                    Spacer(Modifier.width(6.dp))
-                    Text("Photo", fontWeight = FontWeight.SemiBold)
+                FooterLabel(if (words == 1) "1 word" else "$words words", JournalColors.Muted)
+                if (!compact) {
+                    Spacer(Modifier.width(18.dp))
+                    FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
                 }
-            }
-            if (keyboardOpen) {
-                TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
-                    Text("Done", fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.weight(1f))
+                // Adds photos where the cursor is.
+                TextButton(onClick = { addPhoto++ }) {
+                    LineIcon(Glyph.Image, JournalColors.Accent)
+                    if (!compact || !keyboardOpen) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("Photo", fontWeight = FontWeight.SemiBold)
+                    }
                 }
-            } else if (text.isNotBlank()) {
-                TextButton(onClick = {
-                    vm.newEntry()
-                    page++ // fresh editor with the cursor on the empty page
-                    keyboard?.show()
-                }) { Text("New entry", fontWeight = FontWeight.SemiBold) }
-            } else {
-                Spacer(Modifier.height(48.dp)) // keeps the line the same height either way
+                if (keyboardOpen) {
+                    TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
+                        Text("Done", fontWeight = FontWeight.SemiBold)
+                    }
+                } else if (text.isNotBlank()) {
+                    TextButton(onClick = {
+                        vm.newEntry()
+                        page++ // fresh editor with the cursor on the empty page
+                        keyboard?.show()
+                    }) { Text("New entry", fontWeight = FontWeight.SemiBold) }
+                } else {
+                    Spacer(Modifier.height(48.dp)) // keeps the line the same height either way
+                }
             }
         }
     }
@@ -201,7 +260,7 @@ private fun FooterLabel(text: String, color: Color) {
 }
 
 @Composable
-private fun SaveIndicator(status: SaveStatus) {
+private fun SaveIndicator(status: SaveStatus, iconOnly: Boolean = false) {
     AnimatedContent(
         targetState = status,
         transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
@@ -210,9 +269,11 @@ private fun SaveIndicator(status: SaveStatus) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         when (shown) {
             SaveStatus.Saved -> {
-                LineIcon(Glyph.Check, JournalColors.Success, size = 14.dp, strokeWidth = 2.2f)
-                Spacer(Modifier.width(6.dp))
-                Text("Saved", color = JournalColors.Muted, fontSize = 12.sp)
+                LineIcon(Glyph.Check, JournalColors.Success, size = if (iconOnly) 16.dp else 14.dp, strokeWidth = 2.2f)
+                if (!iconOnly) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("Saved", color = JournalColors.Muted, fontSize = 12.sp)
+                }
             }
             SaveStatus.Saving -> Text("Saving…", color = JournalColors.Muted, fontSize = 12.sp)
             SaveStatus.Idle -> {}

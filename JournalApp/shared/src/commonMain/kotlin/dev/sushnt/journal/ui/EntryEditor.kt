@@ -8,6 +8,25 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import dev.sushnt.journal.data.PHOTO_MAX_PERCENT
+import dev.sushnt.journal.data.PHOTO_MIN_PERCENT
+import kotlin.math.roundToInt
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -72,7 +91,8 @@ private sealed interface Block {
     val key: Long
 
     data class Text(override val key: Long, val value: TextFieldValue) : Block
-    data class Photo(override val key: Long, val id: String) : Block
+    /** [widthPercent]: % of the text width once resized; null = default size. */
+    data class Photo(override val key: Long, val id: String, val widthPercent: Int? = null) : Block
 }
 
 private var keyCounter = 0L
@@ -81,7 +101,7 @@ private fun nextKey() = ++keyCounter
 private fun List<Block>.toText(): String = joinParts(map {
     when (it) {
         is Block.Text -> EntryPart.Text(it.value.text)
-        is Block.Photo -> EntryPart.Photo(it.id)
+        is Block.Photo -> EntryPart.Photo(it.id, it.widthPercent)
     }
 })
 
@@ -95,7 +115,7 @@ private fun blocksFor(text: String, previous: List<Block>?, cursorAtEnd: Boolean
         previous.zip(parts).all { (b, p) -> (b is Block.Text && p is EntryPart.Text) || (b is Block.Photo && p is EntryPart.Photo && b.id == p.id) }
     return parts.mapIndexed { i, part ->
         when (part) {
-            is EntryPart.Photo -> Block.Photo(if (sameShape) previous!![i].key else nextKey(), part.id)
+            is EntryPart.Photo -> Block.Photo(if (sameShape) previous!![i].key else nextKey(), part.id, part.widthPercent)
             is EntryPart.Text -> {
                 val old = if (sameShape) previous!![i] as Block.Text else null
                 val selection = when {
@@ -131,6 +151,14 @@ fun EntryEditor(
     focusOnStart: Boolean = false,
     /** Tall last text area, so clicking anywhere below the text starts typing there. */
     minLastHeight: Dp = 160.dp,
+    /** Size limits for photos in the text. Desktop keeps them small so there's room to write. */
+    photoMaxHeight: Dp = 300.dp,
+    photoMaxWidth: Dp = 480.dp,
+    /**
+     * After adding a photo, put the cursor right below it. Desktop: yes. Phone: no, because
+     * that pops the keyboard up over the photo you just added; tap to keep writing.
+     */
+    refocusAfterPhoto: Boolean = true,
     photos: PhotoStore = koinInject(),
 ) {
     var blocks by remember { mutableStateOf(blocksFor(text, null, cursorAtEnd = true)) }
@@ -139,6 +167,9 @@ fun EntryEditor(
     var status by remember { mutableStateOf<String?>(null) }
     var undoText by remember { mutableStateOf<String?>(null) }
     val requesters = remember { HashMap<Long, FocusRequester>() }
+    val focusManager = LocalFocusManager.current
+    /** The photo tapped for resizing (shows its side handles), if any. */
+    var selectedPhoto by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val latestText by rememberUpdatedState(text)
     val titleLook = remember(titleSize) { FirstLineAsTitle(titleSize) }
@@ -180,8 +211,9 @@ fun EntryEditor(
         var cut = if (block.key == focusedKey) block.value.selection.start else value.length
         // Never above or inside the title line.
         if (index == 0) cut = maxOf(cut, value.indexOf('\n').let { if (it < 0) value.length else it })
-        val before = value.substring(0, cut).removeSuffix("\n")
-        val after = value.substring(cut).removePrefix("\n")
+        // Blank lines next to a photo would only add empty space around it.
+        val before = value.substring(0, cut).trimEnd('\n')
+        val after = value.substring(cut).trimStart('\n')
 
         val inserted = mutableListOf<Block>(Block.Text(block.key, TextFieldValue(before, TextRange(before.length))))
         ids.forEachIndexed { i, id ->
@@ -191,7 +223,24 @@ fun EntryEditor(
         val afterBlock = Block.Text(nextKey(), TextFieldValue(after, TextRange.Zero))
         inserted += afterBlock
         publish(current.take(index) + inserted + current.drop(index + 1))
-        focusKeyRequest = afterBlock.key // keep writing right below the photo
+        if (refocusAfterPhoto) {
+            focusKeyRequest = afterBlock.key // keep writing right below the photo
+        } else {
+            focusedKey = null
+            focusManager.clearFocus() // keyboard down: the photo stays in view
+        }
+    }
+
+    fun jumpToTextBefore(key: Long) {
+        val i = blocks.indexOfFirst { it.key == key }
+        val previous = (0 until i).reversed().map { blocks[it] }.firstOrNull { it is Block.Text } as? Block.Text ?: return
+        val end = previous.value.text.length
+        blocks = blocks.map { if (it.key == previous.key) Block.Text(it.key, previous.value.copy(selection = TextRange(end))) else it }
+        focusKeyRequest = previous.key
+    }
+
+    fun resizePhoto(key: Long, percent: Int) {
+        publish(blocks.map { if (it is Block.Photo && it.key == key) it.copy(widthPercent = percent) else it })
     }
 
     fun removePhoto(index: Int) {
@@ -208,7 +257,7 @@ fun EntryEditor(
         publish(current.take(index - 1) + joinedBlock + current.drop(index + 2))
     }
 
-    val pick = rememberPhotoPicker { picked ->
+    fun addPicked(picked: List<ByteArray>) {
         scope.launch {
             val room = MAX_PHOTOS_PER_ENTRY - photoIds(latestText).size
             if (room <= 0) {
@@ -225,9 +274,35 @@ fun EntryEditor(
             }
         }
     }
+    val pick = rememberPhotoPicker { picked -> addPicked(picked) }
+    // null where there's no camera (desktop): then the button opens the file picker directly.
+    val takePhoto = rememberCameraCapture { taken -> addPicked(listOf(taken)) }
+    var choosingSource by remember { mutableStateOf(false) }
+
     // Only presses that happen while this editor is on screen (not an old count).
     val startSignal = remember { addPhotoSignal }
-    LaunchedEffect(addPhotoSignal) { if (addPhotoSignal != startSignal) pick() }
+    LaunchedEffect(addPhotoSignal) {
+        if (addPhotoSignal == startSignal) return@LaunchedEffect
+        if (takePhoto != null) {
+            focusManager.clearFocus() // keyboard down so the choice sheet is fully visible
+            choosingSource = true
+        } else {
+            pick()
+        }
+    }
+    if (choosingSource) {
+        PhotoSourceSheet(
+            onCamera = {
+                choosingSource = false
+                takePhoto?.invoke()
+            },
+            onGallery = {
+                choosingSource = false
+                pick()
+            },
+            onDismiss = { choosingSource = false },
+        )
+    }
     LaunchedEffect(status) {
         if (status != null && !status!!.endsWith("…")) {
             delay(5_000)
@@ -250,7 +325,7 @@ fun EntryEditor(
     }
 
     val isEmpty = text.isEmpty()
-    Column(modifier.animateContentSize(Motion.standard())) {
+    Column(modifier) {
         blocks.forEachIndexed { index, block ->
             key(block.key) {
                 when (block) {
@@ -267,7 +342,23 @@ fun EntryEditor(
                                 .fillMaxWidth()
                                 .then(if (last) Modifier.heightIn(min = minLastHeight) else Modifier)
                                 .focusRequester(requester)
-                                .onFocusChanged { if (it.isFocused) focusedKey = block.key }
+                                .onFocusChanged {
+                                    if (it.isFocused) {
+                                        focusedKey = block.key
+                                        selectedPhoto = null // typing again: put the resize handles away
+                                    }
+                                }
+                                // Backspace at the very start of the text below a photo: hop back to
+                                // the end of the text above the photo (the photo itself stays; use ×).
+                                .onPreviewKeyEvent { event ->
+                                    val atStart = block.value.selection.collapsed && block.value.selection.start == 0
+                                    if (index > 0 && atStart && event.type == KeyEventType.KeyDown && event.key == Key.Backspace) {
+                                        jumpToTextBefore(block.key)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
                                 .semantics { contentDescription = if (index == 0) "Journal entry. The first line is the title." else "Text after a photo" },
                             textStyle = textStyle,
                             cursorBrush = SolidColor(JournalColors.Accent),
@@ -282,7 +373,23 @@ fun EntryEditor(
                             },
                         )
                     }
-                    is Block.Photo -> PhotoInEntry(block.id, photos, onRemove = { removePhoto(blocks.indexOfFirst { it.key == block.key }) })
+                    is Block.Photo -> PhotoInEntry(
+                        id = block.id,
+                        photos = photos,
+                        photoMaxHeight = photoMaxHeight,
+                        photoMaxWidth = photoMaxWidth,
+                        widthPercent = block.widthPercent,
+                        selected = selectedPhoto == block.key,
+                        onSelect = {
+                            selectedPhoto = if (selectedPhoto == block.key) null else block.key
+                            if (selectedPhoto != null) focusManager.clearFocus()
+                        },
+                        onResize = { percent -> resizePhoto(block.key, percent) },
+                        onRemove = {
+                            selectedPhoto = null
+                            removePhoto(blocks.indexOfFirst { it.key == block.key })
+                        },
+                    )
                 }
             }
         }
@@ -314,22 +421,96 @@ fun EntryEditor(
     }
 }
 
-/** A photo inside the editor: the picture, with a × to remove it. */
+/**
+ * A photo inside the editor. Tap it to select it: two handles appear on its sides.
+ * Dragging either handle resizes it from both sides at once, so it stays centred and keeps
+ * its shape. The new size is saved in the entry text ({{photo:id|60}} = 60 % wide).
+ */
 @Composable
-private fun PhotoInEntry(id: String, photos: PhotoStore, onRemove: () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
-        PhotoView(id, photos)
+private fun PhotoInEntry(
+    id: String,
+    photos: PhotoStore,
+    photoMaxHeight: Dp,
+    photoMaxWidth: Dp,
+    widthPercent: Int?,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    onResize: (Int) -> Unit,
+    onRemove: () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        val available by rememberUpdatedState(constraints.maxWidth.toFloat())
+        // While dragging, the size lives here; it's saved to the text when the finger lifts.
+        var live by remember(widthPercent) { mutableStateOf(widthPercent?.toFloat()) }
+        var shownPx by remember { mutableStateOf(0f) }
+        val save by rememberUpdatedState(onResize)
+
+        fun grow(byPx: Float) {
+            val start = live?.let { it / 100f * available } ?: shownPx
+            val min = available * PHOTO_MIN_PERCENT / 100f
+            val next = (start + 2 * byPx).coerceIn(min, available) // both sides move: stays centred
+            live = next / available * 100f
+        }
+        fun finish() {
+            live?.let { save(it.roundToInt().coerceIn(PHOTO_MIN_PERCENT, PHOTO_MAX_PERCENT)) }
+        }
+
+        PhotoView(
+            id,
+            photos,
+            maxHeight = photoMaxHeight, // (plain maxWidth/maxHeight here would mean the space available)
+            maxWidth = photoMaxWidth,
+            widthFraction = live?.div(100f),
+            onClick = onSelect,
+        ) {
+            Box(Modifier.matchParentSize().onSizeChanged { shownPx = it.width.toFloat() })
+            if (selected) {
+                Box(Modifier.matchParentSize().border(2.dp, JournalColors.Accent, RoundedCornerShape(14.dp)))
+                ResizeHandle(Modifier.align(Alignment.CenterStart), onDrag = { dx -> grow(-dx) }, onDone = ::finish)
+                ResizeHandle(Modifier.align(Alignment.CenterEnd), onDrag = { dx -> grow(dx) }, onDone = ::finish)
+            }
+            // The × sits on the photo's own corner, whatever its shape.
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xB80B0E17))
+                    .clickable(role = Role.Button, onClick = onRemove)
+                    .semantics { contentDescription = "Remove this photo" },
+                contentAlignment = Alignment.Center,
+            ) { LineIcon(Glyph.Close, JournalColors.Text, size = 13.dp, strokeWidth = 2.4f) }
+        }
+    }
+}
+
+/** A white pill on the photo's edge; drag it sideways to resize. Big touch area, small look. */
+@Composable
+private fun ResizeHandle(modifier: Modifier, onDrag: (Float) -> Unit, onDone: () -> Unit) {
+    val drag by rememberUpdatedState(onDrag)
+    val done by rememberUpdatedState(onDone)
+    Box(
+        modifier
+            .size(width = 28.dp, height = 64.dp)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { done() },
+                    onDragCancel = { done() },
+                ) { change, dx ->
+                    change.consume()
+                    drag(dx)
+                }
+            }
+            .semantics { contentDescription = "Drag to resize the photo" },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(Color(0xB80B0E17))
-                .clickable(role = Role.Button, onClick = onRemove)
-                .semantics { contentDescription = "Remove this photo" },
-            contentAlignment = Alignment.Center,
-        ) { LineIcon(Glyph.Close, JournalColors.Text, size = 14.dp, strokeWidth = 2.4f) }
+                .size(width = 6.dp, height = 40.dp)
+                .shadow(4.dp, CircleShape)
+                .background(Color.White, CircleShape),
+        )
     }
 }
 
@@ -342,26 +523,64 @@ fun PhotoView(
     id: String,
     photos: PhotoStore = koinInject(),
     modifier: Modifier = Modifier,
-    maxHeight: Dp = 520.dp,
+    maxHeight: Dp = 320.dp,
+    /** Photos never get wider than this, even on a big desktop window. */
+    maxWidth: Dp = 560.dp,
     corner: Dp = 14.dp,
+    /** Resized photos: this share of the text width (0.2–1). null = the default size above. */
+    widthFraction: Float? = null,
+    onClick: (() -> Unit)? = null,
+    /** Drawn on top of the photo, inside its exact bounds (e.g. the × button). */
+    overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val revision by photos.revision.collectAsState()
     val meta by produceState<Photo?>(null, id, revision) { value = photos.get(id) }
     val image by produceState<ImageBitmap?>(null, id, revision) { value = photos.image(id) }
+    // The real picture's own shape first (so it can never look stretched),
+    // then the size we stored, then a guess while it's still downloading.
     val ratio = (
-        meta?.let { it.width.toFloat() / it.height.coerceAtLeast(1) }
-            ?: image?.let { it.width.toFloat() / it.height.coerceAtLeast(1) }
+        image?.let { it.width.toFloat() / it.height.coerceAtLeast(1) }
+            ?: meta?.let { it.width.toFloat() / it.height.coerceAtLeast(1) }
             ?: 1.5f
-        ).coerceIn(0.5f, 3f)
+        ).coerceIn(0.2f, 5f)
     val shape = RoundedCornerShape(corner)
 
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        val sized = Modifier.heightIn(max = maxHeight).fillMaxWidth().aspectRatio(ratio).clip(shape)
+    // Work out the exact size ourselves: as wide as the text, but never taller than
+    // [maxHeight] (a tall photo gets narrower instead), keeping the photo's own shape.
+    // (Inside BoxWithConstraints, maxWidth/maxHeight mean the space available.)
+    val tallest = maxHeight
+    val widest = maxWidth
+    BoxWithConstraints(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        val widthCap = minOf(maxWidth, widest)
         val bitmap = image
-        if (bitmap != null) {
-            Image(bitmap, contentDescription = "Photo", modifier = sized, contentScale = ContentScale.Crop)
+        val tap = if (onClick != null) {
+            Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
         } else {
-            Box(sized.shimmer().semantics { contentDescription = "Photo loading" })
+            Modifier
+        }
+        if (bitmap != null && widthFraction != null) {
+            // Resized: exactly this share of the width; the height follows the photo's shape.
+            val width = maxWidth * widthFraction.coerceIn(0.2f, 1f)
+            Box(Modifier.size(width, width / ratio)) {
+                Image(bitmap, contentDescription = "Photo", modifier = Modifier.fillMaxSize().clip(shape).then(tap), contentScale = ContentScale.Fit)
+                overlay?.invoke(this)
+            }
+        } else if (bitmap != null) {
+            // The picture sizes itself from its own pixels (Fit inside the limits), and this
+            // Box shrinks to exactly that size, so the overlay (×) lands on the photo's corner.
+            Box {
+                Image(
+                    bitmap,
+                    contentDescription = "Photo",
+                    modifier = Modifier.sizeIn(maxWidth = widthCap, maxHeight = tallest).clip(shape).then(tap),
+                    contentScale = ContentScale.Fit,
+                )
+                overlay?.invoke(this)
+            }
+        } else {
+            // Still downloading: a shimmering box of the size the photo will have.
+            val width = widthFraction?.let { maxWidth * it.coerceIn(0.2f, 1f) } ?: minOf(widthCap, tallest * ratio)
+            Box(Modifier.size(width, width / ratio).clip(shape).shimmer().semantics { contentDescription = "Photo loading" })
         }
     }
 }
@@ -373,7 +592,12 @@ fun EntryBodyView(body: String, style: TextStyle, modifier: Modifier = Modifier)
         for (part in splitParts(body)) {
             when (part) {
                 is EntryPart.Text -> if (part.text.isNotBlank()) Text(part.text.trim('\n'), style = style)
-                is EntryPart.Photo -> PhotoView(part.id, modifier = Modifier.padding(vertical = 14.dp), maxHeight = 420.dp)
+                is EntryPart.Photo -> PhotoView(
+                    part.id,
+                    modifier = Modifier.padding(vertical = 14.dp),
+                    maxHeight = 320.dp,
+                    widthFraction = part.widthPercent?.div(100f),
+                )
             }
         }
     }

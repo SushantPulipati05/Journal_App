@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream, Image }
+enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream, Image, Plus, Camera, Mail, Lock, Eye, EyeOff }
 
 /**
  * Simple line icons drawn on a 24×24 grid (same shapes as the mockups),
@@ -70,6 +70,29 @@ fun LineIcon(glyph: Glyph, tint: Color, size: Dp = 18.dp, strokeWidth: Float = 1
                 )
                 circle(9f, 10.5f, 1.8f)
                 line(21f, 16f, 15.8f, 10.8f, 7f, 19.6f)
+            }
+            Glyph.Camera -> {
+                line(3f, 8f, 3f, 19f, 21f, 19f, 21f, 8f, 16.5f, 8f, 15f, 5f, 9f, 5f, 7.5f, 8f, 3f, 8f)
+                circle(12f, 13f, 3.5f)
+            }
+            Glyph.Mail -> {
+                drawRoundRect(tint, topLeft = p(3f, 5f), size = Size(18f * s, 14f * s), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f * s, 2f * s), style = stroke)
+                line(3f, 7f, 12f, 13f, 21f, 7f)
+            }
+            Glyph.Lock -> {
+                drawRoundRect(tint, topLeft = p(4f, 11f), size = Size(16f * s, 10f * s), cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f * s, 2f * s), style = stroke)
+                drawArc(tint, 180f, 180f, false, topLeft = p(8f, 3f), size = Size(8f * s, 8f * s), style = stroke)
+                line(8f, 7f, 8f, 11f)
+                line(16f, 7f, 16f, 11f)
+            }
+            Glyph.Eye, Glyph.EyeOff -> {
+                line(2f, 12f, 5f, 8f, 8.5f, 5.8f, 12f, 5f, 15.5f, 5.8f, 19f, 8f, 22f, 12f, 19f, 16f, 15.5f, 18.2f, 12f, 19f, 8.5f, 18.2f, 5f, 16f, 2f, 12f)
+                circle(12f, 12f, 3f)
+                if (glyph == Glyph.EyeOff) line(4f, 4f, 20f, 20f)
+            }
+            Glyph.Plus -> {
+                line(12f, 5f, 12f, 19f)
+                line(5f, 12f, 19f, 12f)
             }
             Glyph.Close -> {
                 line(6f, 6f, 18f, 18f)

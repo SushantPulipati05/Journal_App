@@ -88,6 +88,8 @@ import dev.sushnt.journal.ui.JournalTheme
 import dev.sushnt.journal.ui.JournalsScreen
 import dev.sushnt.journal.ui.SettingsScreen
 import dev.sushnt.journal.ui.TabBar
+import dev.sushnt.journal.ui.NewEntryButton
+import androidx.compose.foundation.layout.Spacer
 import dev.sushnt.journal.ui.WriteScreen
 import dev.sushnt.journal.ui.WriteViewModel
 import kotlinx.coroutines.delay
@@ -308,7 +310,15 @@ private fun BoxScope.CompactHome(
         enter = slideInVertically(Motion.standard()) { it * 2 } + fadeIn(Motion.standard()),
         exit = slideOutVertically(Motion.quick()) { it * 2 } + fadeOut(Motion.quick()),
     ) {
-        TabBar(current = tab, onSelect = onGoTo)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TabBar(current = tab, onSelect = onGoTo)
+            Spacer(Modifier.width(10.dp))
+            // New entry from anywhere: a fresh page on the Write tab, cursor ready.
+            NewEntryButton(onClick = {
+                write.newEntry()
+                onGoTo(HomeTab.Write)
+            })
+        }
     }
 }
 
@@ -454,7 +464,7 @@ private fun WideHome(
                         keyboardOpen = false,
                         onSettings = onOpenSettings,
                         compact = false,
-                        tabBarVisible = !sidebarOpen,
+                        tabBarVisible = false,
                     )
                 }
 
@@ -465,7 +475,7 @@ private fun WideHome(
                     onOpen = { onRead(it.id) },
                     onViewChange = onJournalsView,
                     focusSearchSignal = focusSearch,
-                    bottomPadding = if (sidebarOpen) 24.dp else 100.dp,
+                    bottomPadding = 24.dp,
                 )
             }
         }
@@ -482,16 +492,7 @@ private fun WideHome(
                 onRead(null)
             },
         )
-        // ...and the floating Write/Journals pill at the bottom, like on the phone.
-        // (Full name: the plain version, not the Row one from the enclosing Row.)
-        androidx.compose.animation.AnimatedVisibility(
-            visible = !sidebarOpen && current != SidebarItem.Settings && !sheetOpen,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp),
-            enter = slideInVertically(Motion.standard()) { it * 2 } + fadeIn(Motion.standard()),
-            exit = slideOutVertically(Motion.quick()) { it * 2 } + fadeOut(Motion.quick()),
-        ) {
-            TabBar(current = if (current == SidebarItem.Journals) HomeTab.Journals else HomeTab.Write, onSelect = onGoTo)
-        }
+        // No floating tab bar on wide windows: the sidebar (or its open button) does that job.
         }
     }
 }

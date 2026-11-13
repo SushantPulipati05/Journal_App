@@ -159,3 +159,23 @@ fun Modifier.topGlow(): Modifier = this.drawBehind {
         ),
     )
 }
+
+/** The round + next to the tab bar: start a new entry from anywhere. */
+@Composable
+fun NewEntryButton(onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    Box(
+        Modifier
+            .size(58.dp)
+            .pressScale(source)
+            .shadow(16.dp, CircleShape)
+            .background(JournalColors.AccentContainer, CircleShape)
+            .border(1.dp, Color(0xFF343D57), CircleShape)
+            .clip(CircleShape)
+            .clickable(interactionSource = source, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "New entry" },
+        contentAlignment = Alignment.Center,
+    ) {
+        LineIcon(Glyph.Plus, JournalColors.Accent, size = 22.dp, strokeWidth = 2f)
+    }
+}
