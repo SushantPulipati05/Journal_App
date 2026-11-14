@@ -24,6 +24,10 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        // sherpa-onnx (offline speech recognition for dictation) is published on JitPack.
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\.k2-fsa.*") }
+        }
     }
 }
 

@@ -1,21 +1,34 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# Rules for the release build's code shrinker (R8).
+# If the release build crashes but the debug build doesn't, a rule here is missing.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# kotlinx.serialization: keep the generated serializers for our server JSON classes.
+-keepattributes *Annotation*, InnerClasses, Signature, EnclosingMethod
+-keep,includedescriptorclasses class dev.sushnt.journal.**$$serializer { *; }
+-keepclassmembers class dev.sushnt.journal.** {
+    *** Companion;
+}
+-keepclasseswithmembers class dev.sushnt.journal.** {
+    kotlinx.serialization.KSerializer serializer(...);
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# SQLite (bundled native library, called through JNI).
+-keep class androidx.sqlite.driver.bundled.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# Background sync worker (created by WorkManager by name).
+-keep class * extends androidx.work.ListenableWorker {
+    <init>(...);
+}
+
+# Sign in with Google (Credential Manager loads the Play Services provider by name).
+-keep class androidx.credentials.playservices.** { *; }
+
+# Optional pieces Ktor/OkHttp mention but this app doesn't use.
+-dontwarn org.slf4j.**
+-dontwarn org.conscrypt.**
+-dontwarn org.bouncycastle.**
+-dontwarn org.openjsse.**
+-dontwarn java.lang.management.**
+
+# Offline speech recognition (sherpa-onnx): its native code reads these classes and
+# their fields by name, so nothing in it may be renamed or removed.
+-keep class com.k2fsa.sherpa.onnx.** { *; }

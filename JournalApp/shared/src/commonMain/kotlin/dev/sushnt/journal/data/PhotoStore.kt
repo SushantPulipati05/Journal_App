@@ -49,7 +49,9 @@ class PhotoStore(
     val revision: StateFlow<Long> = _revision
 
     /** Recently drawn photos, so scrolling back up doesn't decode them again. */
+    /** Key "id@size". Ordered oldest-used first, so the oldest are dropped when it's full. */
     private val cache = LinkedHashMap<String, ImageBitmap>()
+    private var cacheBytes = 0L
     private val cacheLock = Mutex()
 
     init {
@@ -98,17 +100,56 @@ class PhotoStore(
 
     suspend fun get(id: String): Photo? = locked { getUnlocked(id) }
 
-    /** The decoded image, or null while the file isn't on this device (yet). */
-    suspend fun image(id: String): ImageBitmap? {
-        cacheLock.withLock { cache[id] }?.let { return it }
+    /**
+     * A copy of a photo under a new id (used when restoring an entry from the Trash: the old
+     * id is deleted on the server and can't be reused). null if the file isn't on this device.
+     */
+    suspend fun duplicate(id: String): String? {
+        val copy = locked {
+            val old = getUnlocked(id) ?: return@locked null
+            val bytes = readFileBytes(path(id)) ?: return@locked null
+            val fresh = old.copy(id = Uuid.random().toString(), uploaded = false, deleted = false, haveFile = true, createdAt = now(), orphanSince = null)
+            writeFileBytes(path(fresh.id), bytes)
+            upsert(fresh)
+            fresh.id
+        }
+        if (copy != null) bump()
+        return copy
+    }
+
+    /**
+     * The decoded image, or null while the file isn't on this device (yet).
+     * [maxSide]: unpack at about this many pixels on the long side (thumbnails, covers);
+     * null = full size (photos shown large inside an entry).
+     */
+    suspend fun image(id: String, maxSide: Int? = null): ImageBitmap? {
+        val key = "$id@${maxSide ?: 0}"
+        cacheLock.withLock {
+            cache.remove(key)?.let { hit ->
+                cache[key] = hit // move to the "recently used" end
+                return hit
+            }
+        }
         val bitmap = withContext(Dispatchers.Default) {
-            readFileBytes(path(id))?.let { decodeImage(it) }
+            readFileBytes(path(id))?.let { decodeImage(it, maxSide) }
         } ?: return null
         cacheLock.withLock {
-            cache[id] = bitmap
-            while (cache.size > 40) cache.remove(cache.keys.first()) // keep memory small
+            cache.put(key, bitmap)?.let { cacheBytes -= it.byteSize() }
+            cacheBytes += bitmap.byteSize()
+            // Keep memory use bounded by SIZE, not by count: drop the least recently used.
+            while (cacheBytes > CACHE_BYTES && cache.size > 1) {
+                val oldest = cache.keys.first()
+                cache.remove(oldest)?.let { cacheBytes -= it.byteSize() }
+            }
         }
         return bitmap
+    }
+
+    private fun ImageBitmap.byteSize(): Long = width.toLong() * height * 4
+
+    private fun dropFromCache(id: String) {
+        val keys = cache.keys.filter { it.startsWith("$id@") }
+        for (k in keys) cache.remove(k)?.let { cacheBytes -= it.byteSize() }
     }
 
     // ---------- what PhotoSync uses ----------
@@ -142,7 +183,7 @@ class PhotoStore(
             deleteFileAt(path(id))
             connection.exec("DELETE FROM photos WHERE id = ?") { it.bindText(1, id) }
         }
-        cacheLock.withLock { cache.remove(id) }
+        cacheLock.withLock { dropFromCache(id) }
         bump()
     }
 
@@ -175,7 +216,7 @@ class PhotoStore(
                 connection.exec("DELETE FROM photos WHERE id = ? AND uploaded = 0") { it.bindText(1, id) }
             }
         }
-        cacheLock.withLock { gone.forEach { cache.remove(it) } }
+        cacheLock.withLock { gone.forEach { dropFromCache(it) } }
         if (gone.isNotEmpty()) bump()
     }
 
@@ -194,7 +235,10 @@ class PhotoStore(
             connection.exec("DELETE FROM photos")
             connection.exec("DELETE FROM meta")
         }
-        cacheLock.withLock { cache.clear() }
+        cacheLock.withLock {
+            cache.clear()
+            cacheBytes = 0
+        }
         bump()
     }
 
@@ -244,6 +288,8 @@ class PhotoStore(
     companion object {
         private const val COLS = "id, width, height, size_bytes, have_file, uploaded, deleted, created_at, orphan_since"
         private const val ORPHAN_GRACE_MS = 60_000L
+        /** At most ~48 MB of unpacked photos in memory (was: up to 40 full photos, ~300 MB). */
+        private const val CACHE_BYTES = 48L * 1024 * 1024
 
         fun open(driver: SQLiteDriver, dataDir: String) =
             PhotoStore(driver.open("$dataDir/photos.db"), "$dataDir/photos")

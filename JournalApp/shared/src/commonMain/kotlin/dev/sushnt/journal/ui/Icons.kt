@@ -14,7 +14,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream, Image, Plus, Camera, Mail, Lock, Eye, EyeOff }
+enum class Glyph { Pen, Book, Person, Search, Back, Forward, Check, Moon, More, Panel, Trash, Close, Grid, Stream, Image, Plus, Camera, Mail, Lock, Eye, EyeOff, Mic }
 
 /**
  * Simple line icons drawn on a 24×24 grid (same shapes as the mockups),
@@ -89,6 +89,12 @@ fun LineIcon(glyph: Glyph, tint: Color, size: Dp = 18.dp, strokeWidth: Float = 1
                 line(2f, 12f, 5f, 8f, 8.5f, 5.8f, 12f, 5f, 15.5f, 5.8f, 19f, 8f, 22f, 12f, 19f, 16f, 15.5f, 18.2f, 12f, 19f, 8.5f, 18.2f, 5f, 16f, 2f, 12f)
                 circle(12f, 12f, 3f)
                 if (glyph == Glyph.EyeOff) line(4f, 4f, 20f, 20f)
+            }
+            Glyph.Mic -> {
+                drawRoundRect(tint, topLeft = p(9f, 3f), size = Size(6f * s, 11f * s), cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f * s, 3f * s), style = stroke)
+                drawArc(tint, 0f, 180f, false, topLeft = p(5f, 6f), size = Size(14f * s, 12f * s), style = stroke)
+                line(12f, 18f, 12f, 21f)
+                line(9f, 21f, 15f, 21f)
             }
             Glyph.Plus -> {
                 line(12f, 5f, 12f, 19f)

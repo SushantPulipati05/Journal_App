@@ -13,7 +13,7 @@ import kotlin.time.Instant
 
 sealed interface SyncResult {
     /** [pushed] local changes accepted, [pulled] server changes stored, [failed] changes the server refused for good. */
-    data class Done(val pushed: Int, val pulled: Int, val failed: Int) : SyncResult
+    data class Done(val pushed: Int, val pulled: Int, val failed: Int, val merged: Int = 0) : SyncResult
     data class Failed(val error: ApiError) : SyncResult
 }
 
@@ -41,34 +41,39 @@ class SyncEngine(
         var failed = 0
 
         // ----- push -----
-        for (batch in store.dirtyEntries().chunked(batchSize)) {
-            when (val result = api.push(batch.map { it.toDto() })) {
-                is ApiResult.Err -> return SyncResult.Failed(result.error)
-                is ApiResult.Ok -> {
-                    val sent = batch.associateBy { it.id }
-                    for (r in result.value.results) {
-                        val entry = sent[r.id] ?: continue
-                        when (r.status) {
-                            "applied" -> {
-                                store.markSynced(entry.id, entry.updatedAt, r.version)
-                                pushed++
-                            }
-                            // The server has something newer. Stay dirty; the pull below
-                            // brings the newer copy and applyRemote decides.
-                            "stale" -> {}
-                            // "rejected" / "invalid": retrying can never succeed, so stop sending it.
-                            else -> {
-                                store.markSynced(entry.id, entry.updatedAt, entry.version)
-                                failed++
+        suspend fun push(): ApiError? {
+            for (batch in store.dirtyEntries().chunked(batchSize)) {
+                when (val result = api.push(batch.map { it.toDto() })) {
+                    is ApiResult.Err -> return result.error
+                    is ApiResult.Ok -> {
+                        val sent = batch.associateBy { it.id }
+                        for (r in result.value.results) {
+                            val entry = sent[r.id] ?: continue
+                            when (r.status) {
+                                "applied" -> {
+                                    store.markSynced(entry.id, entry.updatedAt, r.version)
+                                    pushed++
+                                }
+                                // The server has something newer. Stay dirty; the pull below
+                                // brings the newer copy and applyRemote merges the two.
+                                "stale" -> {}
+                                // "rejected" / "invalid": retrying can never succeed, so stop sending it.
+                                else -> {
+                                    store.markSynced(entry.id, entry.updatedAt, entry.version)
+                                    failed++
+                                }
                             }
                         }
                     }
                 }
             }
+            return null
         }
+        push()?.let { return SyncResult.Failed(it) }
 
         // ----- pull -----
         var pulled = 0
+        var merged = 0
         var cursor = store.cursor()
         while (true) {
             when (val result = api.pull(cursor, batchSize)) {
@@ -77,7 +82,11 @@ class SyncEngine(
                     val page = result.value
                     for (change in page.changes) {
                         val entry = change.toEntryOrNull() ?: continue
-                        if (store.applyRemote(entry)) pulled++
+                        when (store.applyRemote(entry)) {
+                            ApplyResult.Stored -> pulled++
+                            ApplyResult.Merged -> merged++
+                            ApplyResult.KeptLocal -> {}
+                        }
                     }
                     // Save the bookmark after every page so an interruption loses little.
                     store.setCursor(page.nextCursor)
@@ -86,6 +95,10 @@ class SyncEngine(
                 }
             }
         }
+
+        // ----- merged entries go straight back up, so the other device gets them too -----
+        if (merged > 0) push()?.let { return SyncResult.Failed(it) }
+
         // ----- photos (never fails the entry sync) -----
         if (photoSync != null) {
             try {
@@ -96,7 +109,7 @@ class SyncEngine(
                 // e.g. disk full; the next sync tries again
             }
         }
-        SyncResult.Done(pushed, pulled, failed)
+        SyncResult.Done(pushed, pulled, failed, merged)
     }
 }
 

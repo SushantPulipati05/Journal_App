@@ -62,8 +62,18 @@ private fun decodeSampled(bytes: ByteArray): Bitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
 }
 
-actual fun decodeImage(bytes: ByteArray): ImageBitmap? =
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+actual fun decodeImage(bytes: ByteArray, maxSide: Int?): ImageBitmap? {
+    val options = BitmapFactory.Options()
+    if (maxSide != null) {
+        // Read only the size first, then unpack at 1/2, 1/4, 1/8... of it (cheap and fast).
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        var sample = 1
+        while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        options.inSampleSize = sample
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.asImageBitmap()
+}
 
 actual fun writeFileBytes(path: String, bytes: ByteArray) {
     val file = File(path)

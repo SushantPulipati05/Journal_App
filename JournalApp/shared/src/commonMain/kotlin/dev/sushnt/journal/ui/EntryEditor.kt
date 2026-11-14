@@ -42,6 +42,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -159,6 +160,8 @@ fun EntryEditor(
      * that pops the keyboard up over the photo you just added; tap to keep writing.
      */
     refocusAfterPhoto: Boolean = true,
+    /** Lets the screen around the editor put dictated words at the cursor. */
+    handle: EditorHandle? = null,
     photos: PhotoStore = koinInject(),
 ) {
     var blocks by remember { mutableStateOf(blocksFor(text, null, cursorAtEnd = true)) }
@@ -237,6 +240,67 @@ fun EntryEditor(
         val end = previous.value.text.length
         blocks = blocks.map { if (it.key == previous.key) Block.Text(it.key, previous.value.copy(selection = TextRange(end))) else it }
         focusKeyRequest = previous.key
+    }
+
+    /**
+     * Dictation: words arrive while you speak ([final] = false, they may still change) and
+     * then for good ([final] = true). They go where the cursor is (or at the end), and each
+     * new guess replaces the previous one, so the text "settles" as you talk.
+     */
+    val spot = remember { DictationSpot() }
+    fun dictate(chunk: String, final: Boolean) {
+        val current = blocks
+        var index = current.indexOfFirst { it.key == spot.blockKey }
+        if (index < 0 || current[index] !is Block.Text) {
+            // First words: start at the cursor, or at the end of the entry.
+            index = current.indexOfFirst { it.key == focusedKey }.takeIf { it >= 0 && current[it] is Block.Text }
+                ?: current.indexOfLast { it is Block.Text }
+            val b = current[index] as Block.Text
+            spot.blockKey = b.key
+            spot.start = if (b.key == focusedKey) b.value.selection.end else b.value.text.length
+            spot.length = 0
+            spot.newLineFirst = false
+            if (index == 0) {
+                // The first line is the title. Spoken words belong in the entry, not in the title:
+                // start on a new line below it (or at the end of the text if there's more already).
+                val firstLineEnd = b.value.text.indexOf('\n')
+                if (firstLineEnd < 0) {
+                    spot.start = b.value.text.length
+                    spot.newLineFirst = true
+                } else if (spot.start <= firstLineEnd) {
+                    spot.start = b.value.text.length
+                }
+            }
+        }
+        val block = current[index] as Block.Text
+        val old = block.value.text
+        val start = spot.start.coerceIn(0, old.length)
+        val end = (start + spot.length).coerceIn(start, old.length)
+        val needsSpace = start > 0 && !old[start - 1].isWhitespace()
+        val words = chunk.trim()
+        val lead = when {
+            spot.newLineFirst -> "\n"
+            needsSpace -> " "
+            else -> ""
+        }
+        val inserted = if (words.isEmpty()) "" else lead + words.replaceFirstChar { if (lead == "\n" || start == 0 || old.getOrNull(start - 1) == '\n') it.uppercaseChar() else it }
+        val next = old.substring(0, start) + inserted + old.substring(end)
+        val cursor = start + inserted.length
+        publish(current.toMutableList().also { it[index] = Block.Text(block.key, TextFieldValue(next, TextRange(cursor))) })
+        if (final) {
+            spot.start = cursor // the next sentence goes right after this one
+            spot.length = 0
+            if (inserted.isNotEmpty()) spot.newLineFirst = false
+        } else {
+            spot.length = inserted.length
+        }
+    }
+    SideEffect {
+        handle?.onDictate = ::dictate
+        handle?.onEnd = {
+            spot.blockKey = null
+            spot.length = 0
+        }
     }
 
     fun resizePhoto(key: Long, percent: Int) {
@@ -529,13 +593,15 @@ fun PhotoView(
     corner: Dp = 14.dp,
     /** Resized photos: this share of the text width (0.2–1). null = the default size above. */
     widthFraction: Float? = null,
+    /** Unpack the photo at about this many pixels (small previews save lots of memory). null = full size. */
+    decodeMaxSide: Int? = null,
     onClick: (() -> Unit)? = null,
     /** Drawn on top of the photo, inside its exact bounds (e.g. the × button). */
     overlay: (@Composable BoxScope.() -> Unit)? = null,
 ) {
     val revision by photos.revision.collectAsState()
     val meta by produceState<Photo?>(null, id, revision) { value = photos.get(id) }
-    val image by produceState<ImageBitmap?>(null, id, revision) { value = photos.image(id) }
+    val image by produceState<ImageBitmap?>(null, id, revision, decodeMaxSide) { value = photos.image(id, decodeMaxSide) }
     // The real picture's own shape first (so it can never look stretched),
     // then the size we stored, then a guess while it's still downloading.
     val ratio = (
@@ -607,9 +673,35 @@ fun EntryBodyView(body: String, style: TextStyle, modifier: Modifier = Modifier)
 @Composable
 fun PhotoThumb(id: String, modifier: Modifier = Modifier, photos: PhotoStore = koinInject()) {
     val revision by photos.revision.collectAsState()
-    val image by produceState<ImageBitmap?>(null, id, revision) { value = photos.image(id) }
+    // Thumbnails are small squares: unpack at 320 px, not the full 1600 px photo.
+    val image by produceState<ImageBitmap?>(null, id, revision) { value = photos.image(id, maxSide = 320) }
     val sized = modifier.aspectRatio(1f).clip(RoundedCornerShape(10.dp))
     val bitmap = image
     if (bitmap != null) Image(bitmap, contentDescription = "Photo", modifier = sized, contentScale = ContentScale.Crop)
     else Box(sized.shimmer())
+}
+
+/** Where dictated words are going: which text block, from where, and how long the current guess is. */
+private class DictationSpot {
+    var blockKey: Long? = null
+    var start = 0
+    var length = 0
+    /** Start below the title line (the words go on a new line). */
+    var newLineFirst = false
+}
+
+/** A small remote control for an [EntryEditor], used by the mic button around it. */
+class EditorHandle {
+    internal var onDictate: ((String, Boolean) -> Unit)? = null
+    internal var onEnd: (() -> Unit)? = null
+
+    /** Put dictated words at the cursor. Not final = a guess that the next call replaces. */
+    fun dictate(text: String, final: Boolean) {
+        onDictate?.invoke(text, final)
+    }
+
+    /** Dictation stopped: the next time starts fresh at the cursor. */
+    fun endDictation() {
+        onEnd?.invoke()
+    }
 }

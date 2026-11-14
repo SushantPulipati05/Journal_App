@@ -195,7 +195,13 @@ fun JournalsScreen(
 private fun SwipeToDelete(modifier: Modifier, onDelete: () -> Unit, content: @Composable () -> Unit) {
     val state = rememberSwipeToDismissBoxState()
     LaunchedEffect(state.currentValue) {
-        if (state.currentValue == SwipeToDismissBoxValue.EndToStart) onDelete()
+        if (state.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            onDelete()
+            // If "Undo" brings the card back into this same spot, it must not still be
+            // swiped away (that made Undo look like it did nothing). Reset it once it's gone.
+            kotlinx.coroutines.delay(400)
+            state.snapTo(SwipeToDismissBoxValue.Settled)
+        }
     }
     SwipeToDismissBox(
         state = state,

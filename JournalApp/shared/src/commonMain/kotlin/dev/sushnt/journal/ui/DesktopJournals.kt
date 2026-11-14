@@ -389,7 +389,7 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
         // The first photo is the card's cover.
         if (photoList.isNotEmpty()) {
             Box {
-                PhotoView(photoList.first(), maxHeight = 220.dp, corner = 12.dp)
+                PhotoView(photoList.first(), maxHeight = 220.dp, corner = 12.dp, decodeMaxSide = 720)
                 Text(
                     if (photoList.size == 1) "1 photo" else "${photoList.size} photos",
                     color = JournalColors.Text,

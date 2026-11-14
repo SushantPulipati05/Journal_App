@@ -23,7 +23,9 @@ class PhotoSync(
         val owner = HashMap<String, Pair<String, Int>>()
         for (e in live) photoIds(e.body).forEachIndexed { i, id -> if (id !in owner) owner[id] = e.id to i }
 
-        photos.collectGarbage(owner.keys)
+        // Photos of entries in the Trash are kept too, so restoring brings them back.
+        val inTrash = entries.trashPhotoIds()
+        photos.collectGarbage(owner.keys + inTrash)
         val all = photos.all()
 
         // 1. Tell the server about photos removed here.
@@ -74,7 +76,10 @@ class PhotoSync(
                 is ApiResult.Err -> return
             }
             for (a in page.attachments) {
-                if (a.deletedAt != null) photos.forget(a.id)
+                if (a.deletedAt != null) {
+                    // Gone on the server, but an entry in this device's Trash still shows it: keep the file.
+                    if (a.id !in inTrash) photos.forget(a.id)
+                }
                 else photos.addRemote(a.id, a.width, a.height, a.sizeBytes)
             }
             photos.setCursor(page.nextCursor)

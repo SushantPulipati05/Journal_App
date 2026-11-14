@@ -35,9 +35,12 @@ android {
         applicationId = "dev.sushnt.journal"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        // Raise versionCode by 1 for EVERY upload to Play; versionName is what users see.
-        versionCode = 1
-        versionName = "1.0.0"
+        // New version: raise versionCode by 1 and change versionName here, in AppInfo.kt
+        // (shown in Settings) and packageVersion in desktopApp/build.gradle.kts.
+        versionCode = 2
+        versionName = "1.1.0"
+        // Only phone processors (keeps the speech library from adding emulator-only copies).
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     signingConfigs {
         create("release") {
@@ -56,8 +59,13 @@ android {
     }
     buildTypes {
         release {
-            if (!keystoreProps.isEmpty) signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
+            // Real key once keystore.properties exists. Until then the release build is signed
+            // with the same test key as debug builds: fine for your phone and for friends, and
+            // it installs over a debug build without losing anything.
+            signingConfig = signingConfigs.getByName(if (!keystoreProps.isEmpty) "release" else "debug")
+            // Shrinks and optimises the code: a big part of why release builds feel smoother.
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -8,6 +8,17 @@ plugins {
     alias(libs.plugins.kotlinSerialization)
 }
 
+// Which native speech library the desktop app needs (the one for the computer building it).
+val sherpaNativePlatform: String = run {
+    val os = System.getProperty("os.name").lowercase()
+    val arm = System.getProperty("os.arch").lowercase().let { it == "aarch64" || it == "arm64" }
+    when {
+        os.contains("win") -> if (arm) "win-arm64" else "win-x64"
+        os.contains("mac") -> if (arm) "osx-aarch64" else "osx-x64"
+        else -> if (arm) "linux-aarch64" else "linux-x64"
+    }
+}
+
 kotlin {
     listOf(
         iosArm64(),
@@ -49,9 +60,14 @@ kotlin {
             implementation(libs.androidx.credentials)
             implementation(libs.androidx.credentials.playServices)
             implementation(libs.googleid)
+            // Offline speech to text (Whisper) for dictation
+            implementation(libs.sherpa.onnx.android)
         }
         jvmMain.dependencies {
             implementation(libs.ktor.client.cio)
+            // Offline speech to text (Whisper) for dictation: the Java API + this computer's native library
+            implementation(libs.sherpa.onnx.jvm)
+            implementation("com.github.k2-fsa.sherpa-onnx:sherpa-onnx-native-lib-$sherpaNativePlatform:${libs.versions.sherpa.onnx.get()}")
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)

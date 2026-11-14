@@ -47,8 +47,27 @@ actual fun preparePhoto(bytes: ByteArray): PreparedPhoto? {
     return PreparedPhoto(jpeg, w, h)
 }
 
-actual fun decodeImage(bytes: ByteArray): ImageBitmap? = try {
-    Image.makeFromEncoded(bytes).toComposeImageBitmap()
+actual fun decodeImage(bytes: ByteArray, maxSide: Int?): ImageBitmap? = try {
+    val image = Image.makeFromEncoded(bytes)
+    val longest = max(image.width, image.height)
+    if (maxSide == null || longest <= maxSide) {
+        image.toComposeImageBitmap()
+    } else {
+        // Draw it once at the small size and keep only that.
+        val scale = maxSide.toFloat() / longest
+        val w = (image.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (image.height * scale).roundToInt().coerceAtLeast(1)
+        val surface = Surface.makeRasterN32Premul(w, h)
+        surface.canvas.drawImageRect(
+            image,
+            Rect.makeWH(image.width.toFloat(), image.height.toFloat()),
+            Rect.makeWH(w.toFloat(), h.toFloat()),
+            FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR),
+            Paint(),
+            true,
+        )
+        surface.makeImageSnapshot().toComposeImageBitmap()
+    }
 } catch (_: Exception) {
     null
 }

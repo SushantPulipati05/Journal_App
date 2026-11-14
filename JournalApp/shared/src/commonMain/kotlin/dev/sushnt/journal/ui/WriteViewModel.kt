@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
+import dev.sushnt.journal.data.mergeText
 import dev.sushnt.journal.data.PrefsStore
 import dev.sushnt.journal.data.SyncController
 import kotlinx.coroutines.Job
@@ -48,6 +49,8 @@ class WriteViewModel(
     val status: StateFlow<SaveStatus> = _status
 
     private var saveJob: Job? = null
+    /** The text as it is stored for this page's entry (to spot changes made elsewhere). */
+    private var savedText = ""
     /** True from a keystroke until its save starts. Only then is it safe to cancel the wait. */
     private var pendingSave = false
     private var syncJob: Job? = null
@@ -62,9 +65,26 @@ class WriteViewModel(
                 val entry = store.get(id)
                 if (entry == null || entry.deletedAt != null) {
                     resetPage()
-                } else if (!pendingSave && splitEntryText(_text.value) != (entry.title to entry.body)) {
-                    // Changed somewhere else (reading screen, another device): show the new text.
-                    _text.value = joinEntryText(entry.title, entry.body)
+                } else {
+                    val stored = joinEntryText(entry.title, entry.body)
+                    if (stored != savedText) {
+                        // Changed somewhere else (reading screen, another device).
+                        val mine = splitEntryText(_text.value).let { (t, b) -> joinEntryText(t, b) }
+                        // Nothing typed here since: just show it. Typed here too: merge both edits.
+                        val next = if (mine == savedText) stored else mergeText(savedText, mine, stored)
+                        savedText = stored
+                        if (next != _text.value) {
+                            _text.value = next
+                            if (next != stored) {
+                                pendingSave = true
+                                saveJob?.cancel()
+                                saveJob = viewModelScope.launch {
+                                    delay(800)
+                                    save()
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -111,6 +131,7 @@ class WriteViewModel(
 
     private fun resetPage() {
         _text.value = ""
+        savedText = ""
         _entryId.value = null
         _startedAt.value = nowMillis()
         _status.value = SaveStatus.Idle
@@ -118,6 +139,7 @@ class WriteViewModel(
 
     private fun load(entry: Entry) {
         _text.value = joinEntryText(entry.title, entry.body)
+        savedText = _text.value
         _entryId.value = entry.id
         _startedAt.value = entry.createdAt
         _status.value = SaveStatus.Saved
@@ -141,7 +163,10 @@ class WriteViewModel(
                 _status.value = SaveStatus.Idle // nothing to keep yet
                 return@withLock
             }
-            id == null -> _entryId.value = store.create(title, body).id
+            id == null -> {
+                savedText = joinEntryText(title, body)
+                _entryId.value = store.create(title, body).id
+            }
             text.isBlank() -> {
                 // Everything was erased: an empty entry isn't worth keeping.
                 store.delete(id)
@@ -153,8 +178,10 @@ class WriteViewModel(
             else -> {
                 val existing = store.get(id)
                 if (existing == null || existing.deletedAt != null) {
+                    savedText = joinEntryText(title, body)
                     _entryId.value = store.create(title, body).id // it was deleted elsewhere: keep the words
                 } else if (existing.title != title || existing.body != body) {
+                    savedText = joinEntryText(title, body)
                     store.update(id, title, body)
                 }
             }

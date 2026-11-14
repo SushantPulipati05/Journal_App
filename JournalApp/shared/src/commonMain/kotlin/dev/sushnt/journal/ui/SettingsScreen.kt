@@ -1,5 +1,12 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package dev.sushnt.journal.ui
 
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.runtime.remember
+import org.koin.compose.koinInject
+import dev.sushnt.journal.data.SpeechModel
+import dev.sushnt.journal.data.SpeechModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -49,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.sushnt.journal.data.DictationLanguages
 import dev.sushnt.journal.data.EntryTextSize
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -60,8 +68,15 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
     val syncMessage by vm.syncMessage.collectAsState()
     val lastSyncedAt by vm.lastSyncedAt.collectAsState()
     var askDelete by rememberSaveable { mutableStateOf(false) }
+    var trashOpen by rememberSaveable { mutableStateOf(false) }
+    val entries: EntriesViewModel = koinViewModel()
+    val trash by entries.trash.collectAsState()
 
     LaunchedEffect(Unit) { vm.load() }
+    if (trashOpen) {
+        TrashScreen(onBack = { trashOpen = false }, vm = entries)
+        return
+    }
     PlatformBackHandler(enabled = showBack, onBack = onClose)
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -183,11 +198,112 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
                 }
             }
 
+            // ---------- dictation ----------
+            Group("Dictation") {
+                Text(
+                    "Dictation runs on this device with Whisper, so it works offline. Pick the language you speak, " +
+                        "or let it detect it.",
+                    color = JournalColors.Muted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 8.dp),
+                )
+                FlowRow(
+                    Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    DictationLanguages.forEach { (code, label) ->
+                        val chosen = prefs.dictationLanguage == code
+                        Text(
+                            label,
+                            color = if (chosen) JournalColors.Accent else JournalColors.Text,
+                            fontSize = 14.sp,
+                            fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (chosen) JournalColors.AccentContainer else JournalColors.Border.copy(alpha = 0.5f))
+                                .clickable(role = Role.RadioButton) { vm.updatePrefs { it.copy(dictationLanguage = code) } }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                        )
+                    }
+                }
+                Divider()
+                Text(
+                    "Speech model",
+                    color = JournalColors.Muted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+                )
+                val speechModels = koinInject<SpeechModels>()
+                var modelsChanged by remember { mutableStateOf(0) }
+                val activeModel = SpeechModel.fromId(prefs.speechModel) ?: defaultSpeechModel
+                SpeechModel.entries.forEachIndexed { i, model ->
+                    if (i > 0) Divider()
+                    val chosen = model == activeModel
+                    val installed = remember(modelsChanged, model) { speechModels.isInstalled(model) }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .clickable(role = Role.RadioButton) { vm.updatePrefs { it.copy(speechModel = model.id) } }
+                            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                model.label,
+                                color = if (chosen) JournalColors.TextStrong else JournalColors.Text,
+                                fontSize = 15.sp,
+                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Text(
+                                "${model.detail} · ${if (installed) "Downloaded" else "${model.sizeMb} MB download"}",
+                                color = JournalColors.Muted,
+                                fontSize = 12.sp,
+                            )
+                        }
+                        if (chosen) LineIcon(Glyph.Check, JournalColors.Accent, size = 18.dp, strokeWidth = 2.2f)
+                        if (installed) {
+                            IconAction(Glyph.Trash, "Delete the ${model.label} model from this device", JournalColors.Muted, {
+                                speechModels.delete(model)
+                                modelsChanged++
+                            })
+                        } else {
+                            Spacer(Modifier.width(8.dp))
+                        }
+                    }
+                }
+            }
+
+            // ---------- trash ----------
+            Group("Your entries") {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .clickable(role = Role.Button) { trashOpen = true }
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LineIcon(Glyph.Trash, JournalColors.Muted)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Trash", color = JournalColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("Deleted entries, kept for 30 days", color = JournalColors.Muted, fontSize = 12.sp)
+                    }
+                    Text(if (trash.isEmpty()) "Empty" else "${trash.size}", color = JournalColors.Muted, fontSize = 14.sp)
+                    Spacer(Modifier.width(6.dp))
+                    LineIcon(Glyph.Forward, JournalColors.Muted, size = 16.dp)
+                }
+            }
+
             // ---------- about ----------
             Group("About") {
                 Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Version", color = JournalColors.Text, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                    Text("1.0.0", color = JournalColors.Muted, fontSize = 15.sp)
+                    Text(APP_VERSION, color = JournalColors.Muted, fontSize = 15.sp)
                 }
             }
 

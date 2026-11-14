@@ -93,6 +93,7 @@ import androidx.compose.foundation.layout.Spacer
 import dev.sushnt.journal.ui.WriteScreen
 import dev.sushnt.journal.ui.WriteViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flowOf
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import kotlin.time.Duration.Companion.minutes
@@ -130,7 +131,6 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
     val prefs by prefsStore.prefs.collectAsState()
     val syncController = koinInject<SyncController>()
     val backgroundSync = koinInject<BackgroundSync>()
-    val entries by journals.entries.collectAsState()
 
     // rememberSaveable: survives an Android phone rotating.
     var tab by rememberSaveable { mutableStateOf(HomeTab.Write) }
@@ -153,7 +153,12 @@ private fun Home(write: WriteViewModel, journals: EntriesViewModel = koinViewMod
         backgroundSync.syncSoon()
     }
 
-    val reading = readingId?.let { id -> entries.find { it.id == id } }
+    // Only the ONE entry being read is watched here. (Watching the whole journal from here
+    // made every autosave on the Write page reload every entry: slow on older phones.)
+    val readingFlow = remember(readingId) { readingId?.let { journals.watchEntry(it) } ?: flowOf(null) }
+    val reading by readingFlow.collectAsState(
+        initial = readingId?.let { id -> journals.entries.value.find { it.id == id } },
+    )
     // Kept here so the Journals list stays scrolled where you left it after reading an entry.
     val listState = rememberLazyListState()
     val goTo: (HomeTab) -> Unit = { next ->
@@ -241,7 +246,6 @@ private fun BoxScope.CompactHome(
 ) {
     // Keyboard up = focus mode: the tab bar steps aside.
     val keyboardOpen = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val entries by journals.entries.collectAsState()
 
     val screen: PhoneScreen = when {
         settingsOpen -> PhoneScreen.Settings
@@ -266,8 +270,11 @@ private fun BoxScope.CompactHome(
             PhoneScreen.Settings -> SettingsScreen(onClose = onCloseSettings)
 
             is PhoneScreen.Reading -> {
-                // While sliding away after a delete, the entry may already be gone: show nothing.
-                val entry = entries.find { it.id == shown.id }
+                // Keep showing the entry while this screen slides away (after Back or Delete).
+                val lastShown = remember { arrayOfNulls<Entry>(1) }
+                val current = reading?.takeIf { it.id == shown.id }
+                if (current != null) lastShown[0] = current
+                val entry = current ?: lastShown[0]
                 if (entry != null) {
                     key(entry.id) {
                         // key(): each entry gets its own editing state, so switching entries can

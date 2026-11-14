@@ -4,10 +4,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
+import dev.sushnt.journal.data.PhotoStore
+import dev.sushnt.journal.data.TrashedEntry
+import dev.sushnt.journal.data.photoIds
 import dev.sushnt.journal.data.withoutPhotos
 import dev.sushnt.journal.data.SyncController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +29,7 @@ data class DaySection(val header: String, val entries: List<Entry>)
 class EntriesViewModel(
     private val store: EntryStore,
     private val syncController: SyncController,
+    private val photos: PhotoStore,
 ) : ViewModel() {
 
     /** An entry swiped away but not deleted yet, so "Undo" can still bring it back. */
@@ -76,6 +81,37 @@ class EntriesViewModel(
         !loaded || (list.isEmpty() && syncing && synced == null)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val message: StateFlow<String?> = syncController.message
+
+    /** Just one entry, kept up to date (null once deleted). Much cheaper than [entries]. */
+    fun watchEntry(id: String): Flow<Entry?> =
+        combine(store.revision.map { store.get(id) }, _pendingDelete) { entry, pending ->
+            entry?.takeIf { it.deletedAt == null && pending?.id != id }
+        }
+
+    /** Deleted entries (kept 30 days on this device), newest first. */
+    val trash: StateFlow<List<TrashedEntry>> = store.revision.map { store.trash() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Puts a deleted entry back in Journals, photos included. */
+    fun restore(item: TrashedEntry) {
+        viewModelScope.launch {
+            var body = item.body
+            // The old photo ids were deleted on the server; give the photos new ones.
+            for (id in photoIds(body).distinct()) {
+                val copy = photos.duplicate(id) ?: continue
+                body = body.replace("{{photo:$id", "{{photo:$copy")
+            }
+            if (store.restoreFromTrash(item.id, item.title, body) != null) syncController.syncNow()
+        }
+    }
+
+    fun deleteForever(item: TrashedEntry) {
+        viewModelScope.launch { store.deleteForever(item.id) }
+    }
+
+    fun emptyTrash() {
+        viewModelScope.launch { store.emptyTrash() }
+    }
 
     fun setQuery(q: String) {
         _query.value = q

@@ -78,8 +78,12 @@ const val PHOTO_MAX_SIDE = 1600
 /** Decodes any common image, turns it upright, shrinks it and re-encodes it as JPEG. null = not an image. Slow: call off the UI thread. */
 expect fun preparePhoto(bytes: ByteArray): PreparedPhoto?
 
-/** Turns JPEG/PNG bytes into something Compose can draw. */
-expect fun decodeImage(bytes: ByteArray): ImageBitmap?
+/**
+ * Turns JPEG/PNG bytes into something Compose can draw. With [maxSide], the picture is
+ * unpacked at (about) that size instead of full size: a 300 px thumbnail takes ~0.35 MB of
+ * memory instead of ~7.7 MB for the full 1600 px photo.
+ */
+expect fun decodeImage(bytes: ByteArray, maxSide: Int? = null): ImageBitmap?
 
 expect fun writeFileBytes(path: String, bytes: ByteArray)
 expect fun readFileBytes(path: String): ByteArray?

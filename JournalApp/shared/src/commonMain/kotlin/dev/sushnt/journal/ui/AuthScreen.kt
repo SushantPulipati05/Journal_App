@@ -136,7 +136,7 @@ private fun DesktopAuth(vm: AuthViewModel, state: AuthUiState, form: FormValues,
         ) {
             LogoTile(64.dp, Modifier.align(Alignment.CenterHorizontally))
             Spacer(Modifier.height(4.dp))
-            AnimatedContent(state.resetStep == null to state.isSignup, label = "auth card") { (normal, signup) ->
+            AnimatedContent((state.resetStep == null) to state.isSignup, label = "auth card") { (normal, signup) ->
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     if (normal) {
                         Title(if (signup) "Start your journal" else "Welcome back", centered = true)
@@ -506,7 +506,7 @@ private fun LogoTile(size: Dp, modifier: Modifier = Modifier) {
             .size(size)
             .clip(shape)
             .background(Brush.linearGradient(listOf(Color(0xFF231B45), Color(0xFF0F1222))))
-            .background(Brush.radialGradient(listOf(JournalColors.Accent.copy(alpha = 0.28f), Color.Transparent), center = Offset.Unspecified))
+            .background(Brush.radialGradient(listOf(JournalColors.Accent.copy(alpha = 0.28f), Color.Transparent)))
             .border(1.dp, Color(0xFF2C2558), shape),
         contentAlignment = Alignment.Center,
     ) { BrandMark(size * 0.62f) }

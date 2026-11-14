@@ -1,5 +1,7 @@
 package dev.sushnt.journal.ui
 
+import dev.sushnt.journal.data.SpeechModel
+
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
@@ -81,6 +83,23 @@ fun WriteScreen(
     val keyboard = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
     var addPhoto by remember { mutableStateOf(0) }
+    // Dictation: spoken words go into the editor at the cursor.
+    val editorHandle = remember { EditorHandle() }
+    var dictationNote by remember { mutableStateOf<String?>(null) }
+    val dictation = rememberDictation(
+        language = prefs.dictationLanguage,
+        model = SpeechModel.fromId(prefs.speechModel) ?: defaultSpeechModel,
+        onText = { words, final -> editorHandle.dictate(words, final) },
+        onStopped = { editorHandle.endDictation() },
+        onError = { dictationNote = it },
+    )
+    DictationDialogs(dictation)
+    LaunchedEffect(dictationNote) {
+        if (dictationNote != null) {
+            kotlinx.coroutines.delay(5_000)
+            dictationNote = null
+        }
+    }
     // A new page gets a fresh editor (and the cursor back at the top).
     var page by remember { mutableStateOf(0) }
 
@@ -178,6 +197,7 @@ fun WriteScreen(
                     titleSize = (bodySize * 1.3f).sp,
                     placeholder = "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…",
                     addPhotoSignal = addPhoto,
+                    handle = editorHandle,
                     focusOnStart = true,
                     minLastHeight = 240.dp,
                     // Desktop: small photos so most of the window stays for writing.
@@ -195,13 +215,21 @@ fun WriteScreen(
                 Modifier.fillMaxWidth().padding(top = 2.dp, bottom = bottomGap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                val listening = dictation.listening || dictation.status != null
                 Text(
-                    "${timeLabel(startedAt)} · ${if (words == 1) "1 word" else "$words words"}",
-                    color = JournalColors.Muted,
+                    when {
+                        dictationNote != null -> dictationNote!!
+                        dictation.status != null -> dictation.status!!
+                        dictation.ready -> "Listening… tap the mic to stop"
+                        listening -> "Getting ready…"
+                        else -> "${timeLabel(startedAt)} · ${if (words == 1) "1 word" else "$words words"}"
+                    },
+                    color = if (listening) JournalColors.Accent else JournalColors.Muted,
                     fontSize = 12.sp,
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
+                MicButton(dictation)
                 IconAction(Glyph.Image, "Add photo", Color(0xFFC9CEDB), { addPhoto++ })
                 if (keyboardOpen) {
                     Spacer(Modifier.width(4.dp))
@@ -228,6 +256,11 @@ fun WriteScreen(
                     FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
                 }
                 Spacer(Modifier.weight(1f))
+                (dictationNote ?: dictation.status ?: if (dictation.ready) "Listening… click the mic to stop" else null)?.let {
+                    FooterLabel(it, JournalColors.Accent)
+                    Spacer(Modifier.width(8.dp))
+                }
+                MicButton(dictation)
                 // Adds photos where the cursor is.
                 TextButton(onClick = { addPhoto++ }) {
                     LineIcon(Glyph.Image, JournalColors.Accent)
