@@ -35,9 +35,13 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.koin.compose.koinInject
 import kotlin.concurrent.Volatile
@@ -47,8 +51,9 @@ import kotlin.math.sqrt
  * Offline dictation with Whisper (via sherpa-onnx). How it works:
  *  1. The microphone is read in small chunks (16 000 samples a second).
  *  2. A voice detector (Silero VAD) notices when you start and stop a sentence.
- *  3. Each finished sentence is turned into text by Whisper, on the device, and goes
- *     in at the cursor. A small clean-up then removes "um"s and repeated words.
+ *  3. While you talk, the sentence so far is re-read about once a second and shown as a
+ *     guess. When you pause, the whole sentence is read once more and the final text
+ *     replaces the guess. A small clean-up removes "um"s and repeated words.
  * Nothing is sent anywhere: it works with no internet once the model is downloaded.
  */
 
@@ -95,6 +100,9 @@ expect class Transcriber(paths: SpeechModelPaths, language: String, threads: Int
     /** A finished sentence (its audio), or null if none is ready yet. */
     fun nextSentence(): FloatArray?
 
+    /** You're in the middle of saying something (the voice detector hears speech). */
+    fun speaking(): Boolean
+
     /** You stopped: whatever was being said counts as a finished sentence. */
     fun flush()
 
@@ -134,7 +142,7 @@ fun rememberDictation(
     val stopped by rememberUpdatedState(onStopped)
     val error by rememberUpdatedState(onError)
     val dictation = remember {
-        OfflineDictation(scope, models, { t -> text(t, true) }, { stopped() }, { error(it) })
+        OfflineDictation(scope, models, { t, final -> text(t, final) }, { stopped() }, { error(it) })
     }
     dictation.language = language
     dictation.model = model
@@ -144,11 +152,45 @@ fun rememberDictation(
 }
 
 private const val MIC_DENIED = "Allow the microphone in the app's settings to dictate."
+private const val RATE = 16_000
+
+/** How often the half-finished sentence is re-read while you talk. */
+private const val PREVIEW_EVERY_MS = 900L
+
+/**
+ * The sentence you're in the middle of, as audio, shared by the recorder (which adds to
+ * it) and the live preview (which reads it). [generation] goes up each time a sentence
+ * is finished, so a preview of an older sentence is never shown.
+ */
+private class LiveSpeech {
+    private val lock = Mutex()
+    private var audio = FloatArray(0)
+    private var generation = 0
+    /** Finished sentences waiting for Whisper. Previews wait while there are any. */
+    private var waiting = 0
+
+    suspend fun add(samples: FloatArray) = lock.withLock { audio += samples }
+
+    suspend fun startWith(preRoll: FloatArray) = lock.withLock { audio = preRoll }
+
+    suspend fun sentenceDone() = lock.withLock {
+        audio = FloatArray(0)
+        generation++
+        waiting++
+    }
+
+    suspend fun sentenceWritten() = lock.withLock { waiting-- }
+
+    /** (generation, audio so far), or null while finished sentences are still waiting. */
+    suspend fun snapshot(): Pair<Int, FloatArray>? = lock.withLock { if (waiting > 0) null else generation to audio }
+
+    suspend fun isCurrent(gen: Int): Boolean = lock.withLock { gen == generation && waiting == 0 }
+}
 
 private class OfflineDictation(
     private val scope: CoroutineScope,
     private val models: SpeechModels,
-    private val onSentence: (String) -> Unit,
+    private val onText: (String, Boolean) -> Unit,
     private val onStopped: () -> Unit,
     private val onError: (String) -> Unit,
 ) : Dictation {
@@ -217,6 +259,7 @@ private class OfflineDictation(
             listening = true
             ready = false
             var recorder: Job? = null
+            var preview: Job? = null
             try {
                 // 1. Load Whisper (only the first time, or after changing language/model).
                 val key = "${model.id}|$language"
@@ -233,7 +276,14 @@ private class OfflineDictation(
                 }
                 status = null
 
-                // 2. Record on a background thread; finished sentences go into a queue...
+                // Whisper runs one job at a time: finished sentences and live previews take turns.
+                val whisper = Mutex()
+                suspend fun read(audio: FloatArray): String =
+                    whisper.withLock { withContext(Dispatchers.Default) { cleanTranscript(t.transcribe(audio)) } }
+
+                // 2. Record on a background thread. Finished sentences go into a queue; the
+                //    sentence still being spoken is kept in [live] for the preview.
+                val live = LiveSpeech()
                 val sentences = Channel<FloatArray>(Channel.UNLIMITED)
                 keepListening = true
                 recorder = launch(Dispatchers.Default) {
@@ -244,6 +294,16 @@ private class OfflineDictation(
                     }
                     ready = true
                     val buffer = FloatArray(512)
+                    // The last ~0.4 s, so the preview doesn't cut off your first word.
+                    var recent = FloatArray(0)
+                    var wasSpeaking = false
+                    suspend fun drain() {
+                        while (true) {
+                            val sentence = t.nextSentence() ?: break
+                            live.sentenceDone()
+                            sentences.trySend(sentence)
+                        }
+                    }
                     try {
                         while (keepListening && isActive) {
                             val n = mic.read(buffer)
@@ -251,22 +311,55 @@ private class OfflineDictation(
                             val chunk = buffer.copyOf(n)
                             level = loudness(chunk)
                             t.accept(chunk)
-                            while (true) sentences.trySend(t.nextSentence() ?: break)
+                            val speaking = t.speaking()
+                            if (speaking && !wasSpeaking) live.startWith(recent + chunk)
+                            else if (speaking) live.add(chunk)
+                            wasSpeaking = speaking
+                            recent = (recent + chunk).let { if (it.size > RATE * 2 / 5) it.copyOfRange(it.size - RATE * 2 / 5, it.size) else it }
+                            drain()
                         }
                     } finally {
                         mic.close()
-                        t.flush()
-                        while (true) sentences.trySend(t.nextSentence() ?: break)
+                        withContext(NonCancellable) {
+                            t.flush()
+                            drain()
+                        }
                         sentences.close()
                     }
                 }
 
-                // 3. ...and are written out one by one, while you keep talking.
+                // 3. Live preview: about once a second, re-read the sentence you're in the middle
+                //    of and show it as a guess. The finished version replaces it when you pause.
+                var guessShown = false
+                preview = launch {
+                    var lastGen = -1
+                    var lastSize = 0
+                    while (isActive) {
+                        delay(PREVIEW_EVERY_MS)
+                        if (!keepListening) continue
+                        val (gen, audio) = live.snapshot() ?: continue
+                        if (gen != lastGen) {
+                            lastGen = gen
+                            lastSize = 0
+                        }
+                        // Wait for at least half a second of speech, and something new since last time.
+                        if (audio.size < RATE / 2 || audio.size - lastSize < RATE * 2 / 5) continue
+                        lastSize = audio.size
+                        val text = read(audio)
+                        if (text.isNotEmpty() && keepListening && live.isCurrent(gen)) {
+                            onText(text, false)
+                            guessShown = true
+                        }
+                    }
+                }
+
+                // 4. Finished sentences are written out one by one, replacing the guess.
                 try {
                     for (audio in sentences) {
-                        val raw = withContext(Dispatchers.Default) { t.transcribe(audio) }
-                        val clean = cleanTranscript(raw)
-                        if (clean.isNotEmpty()) onSentence(clean)
+                        val text = read(audio)
+                        if (text.isNotEmpty() || guessShown) onText(text, true) // "" clears a wrong guess
+                        guessShown = false
+                        live.sentenceWritten()
                     }
                 } catch (_: MicUnavailable) {
                     onError("Couldn't use the microphone.")
@@ -276,8 +369,11 @@ private class OfflineDictation(
                 onError("Dictation couldn't start. Try another speech model in Settings.")
             } finally {
                 keepListening = false
-                // The recorder must be finished before the model can be freed.
-                withContext(NonCancellable) { recorder?.join() }
+                // Everything that uses the model must be finished before it can be freed.
+                withContext(NonCancellable) {
+                    preview?.cancelAndJoin()
+                    recorder?.join()
+                }
                 listening = false
                 ready = false
                 level = 0f

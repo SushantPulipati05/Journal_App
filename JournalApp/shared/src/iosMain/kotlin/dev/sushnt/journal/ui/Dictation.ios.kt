@@ -26,6 +26,7 @@ actual class Transcriber actual constructor(paths: SpeechModelPaths, language: S
 
     actual fun accept(samples: FloatArray) {}
     actual fun nextSentence(): FloatArray? = null
+    actual fun speaking(): Boolean = false
     actual fun flush() {}
     actual fun transcribe(samples: FloatArray): String = ""
     actual fun release() {}

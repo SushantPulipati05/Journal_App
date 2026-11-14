@@ -94,10 +94,10 @@ actual class Transcriber actual constructor(paths: SpeechModelPaths, language: S
             sileroVadModelConfig = SileroVadModelConfig(
                 model = paths.vad,
                 threshold = 0.5f,
-                minSilenceDuration = 0.6f, // a breath isn't the end of a sentence
+                minSilenceDuration = 0.5f, // a breath isn't the end of a sentence
                 minSpeechDuration = 0.25f,
                 windowSize = 512,
-                maxSpeechDuration = 20f, // Whisper handles up to 30 s at a time
+                maxSpeechDuration = 12f, // long run-on sentences are cut, so text keeps coming
             ),
             sampleRate = RATE,
             numThreads = 1,
@@ -132,6 +132,8 @@ actual class Transcriber actual constructor(paths: SpeechModelPaths, language: S
         vad.pop()
         return samples
     }
+
+    actual fun speaking(): Boolean = vad.isSpeechDetected()
 
     actual fun flush() {
         pending = FloatArray(0)
