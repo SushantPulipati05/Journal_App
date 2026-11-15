@@ -39,8 +39,6 @@ android {
         // (shown in Settings) and packageVersion in desktopApp/build.gradle.kts.
         versionCode = 2
         versionName = "1.1.0"
-        // Only phone processors (keeps the speech library from adding emulator-only copies).
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
     signingConfigs {
         create("release") {

@@ -1,158 +1,273 @@
 package dev.sushnt.journal.ui
 
 import android.Manifest
-import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
-import com.k2fsa.sherpa.onnx.OfflineModelConfig
-import com.k2fsa.sherpa.onnx.OfflineRecognizer
-import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
-import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig
-import com.k2fsa.sherpa.onnx.SileroVadModelConfig
-import com.k2fsa.sherpa.onnx.Vad
-import com.k2fsa.sherpa.onnx.VadModelConfig
-import dev.sushnt.journal.data.SpeechModel
-import dev.sushnt.journal.data.SpeechModelPaths
 
-private const val RATE = 16_000
-
-/** Phones: "Balanced" by default; old phones can switch to "Fast" in Settings. */
-actual val defaultSpeechModel: SpeechModel = SpeechModel.Base
-
-actual fun speechThreads(): Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
-
+/**
+ * Android's built-in speech recognition (usually Google's). Free, and words appear as you
+ * speak.
+ *
+ * Older Android stops listening after every pause, so we start it again until you tap stop.
+ * Words said in the gap while it restarts used to be lost; to keep that gap tiny we restart
+ * the moment a sentence ends, and on Android 13+ we use a "segmented session", which keeps
+ * listening across pauses with no restarts at all.
+ */
 @Composable
-actual fun rememberMicPermission(): (onResult: (Boolean) -> Unit) -> Unit {
+actual fun rememberDictation(
+    language: String,
+    onText: (text: String, final: Boolean) -> Unit,
+    onStopped: () -> Unit,
+    onError: (String) -> Unit,
+): Dictation? {
     val context = LocalContext.current
-    val holder = remember { arrayOf<((Boolean) -> Unit)?>(null) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        holder[0]?.invoke(granted)
-        holder[0] = null
+    if (!SpeechRecognizer.isRecognitionAvailable(context)) return null
+
+    val text by rememberUpdatedState(onText)
+    val stopped by rememberUpdatedState(onStopped)
+    val error by rememberUpdatedState(onError)
+    val dictation = remember {
+        AndroidDictation(context.applicationContext, { t, f -> text(t, f) }, { stopped() }, { error(it) })
     }
-    return remember(launcher) {
-        { onResult ->
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                onResult(true)
-            } else {
-                holder[0] = onResult
-                launcher.launch(Manifest.permission.RECORD_AUDIO)
+    // Asking for the microphone the first time.
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) dictation.begin() else error("Allow the microphone in the app's settings to dictate.")
+    }
+    dictation.askPermission = { permission.launch(Manifest.permission.RECORD_AUDIO) }
+    dictation.language = language
+    DisposableEffect(Unit) { onDispose { dictation.release() } }
+    return dictation
+}
+
+private class AndroidDictation(
+    private val context: Context,
+    private val onText: (String, Boolean) -> Unit,
+    private val onStopped: () -> Unit,
+    private val onError: (String) -> Unit,
+) : Dictation, RecognitionListener {
+    override var listening by mutableStateOf(false)
+    override var level by mutableFloatStateOf(0f)
+    override var ready by mutableStateOf(false)
+
+    /** e.g. "en-IN". Picking the right one (Indian English vs US) matters a lot for accuracy. */
+    var language: String = ""
+    var askPermission: () -> Unit = {}
+
+    private val main = Handler(Looper.getMainLooper())
+    private var recognizer: SpeechRecognizer? = null
+
+    /** The latest unfinished guess: written for good if listening ends unexpectedly. */
+    private var pending = ""
+
+    /** Restarts in a row that heard nothing; after a while we stop to save battery. */
+    private var quietRestarts = 0
+
+    /**
+     * Android 13+: one long session that keeps going across pauses. Switched off if this
+     * phone's speech service refuses it.
+     */
+    private var segmented = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    /** Anything recognised since the mic was turned on. */
+    private var heardAnything = false
+
+    private fun intent() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
+        // Online recognition is far more accurate than the offline pack; it still falls
+        // back to offline when there's no internet.
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
+        if (language.isNotEmpty()) {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, language)
+            putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE, true)
+        }
+        // Wait longer before deciding you've finished (some phones respect this).
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2500L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Punctuation and capitals, tuned for accuracy rather than speed.
+            putExtra(RecognizerIntent.EXTRA_ENABLE_FORMATTING, RecognizerIntent.FORMATTING_OPTIMIZE_QUALITY)
+            putExtra(RecognizerIntent.EXTRA_MASK_OFFENSIVE_WORDS, false)
+        }
+        if (segmented && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Keep listening across pauses, for up to 5 minutes per session.
+            putExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 5 * 60_000L)
+        }
+    }
+
+    override fun start() {
+        if (listening) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            askPermission()
+            return
+        }
+        begin()
+    }
+
+    fun begin() {
+        if (listening) return
+        listening = true
+        ready = false
+        pending = ""
+        quietRestarts = 0
+        heardAnything = false
+        listenAgain()
+    }
+
+    private fun listenAgain() {
+        if (!listening) return
+        val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also {
+            it.setRecognitionListener(this)
+            recognizer = it
+        }
+        r.startListening(intent())
+    }
+
+    override fun stop() {
+        if (!listening) return
+        listening = false
+        recognizer?.stopListening() // the last words still arrive in onResults
+        main.postDelayed({ finish() }, 1_500) // in case they never do
+    }
+
+    /** Listening is over: write any half-finished guess for good and tidy up. */
+    private fun finish() {
+        if (recognizer == null && !ready && pending.isEmpty()) return
+        commitPending()
+        listening = false
+        ready = false
+        level = 0f
+        recognizer?.destroy()
+        recognizer = null
+        main.removeCallbacksAndMessages(null)
+        onStopped()
+    }
+
+    fun release() {
+        listening = false
+        main.removeCallbacksAndMessages(null)
+        recognizer?.destroy()
+        recognizer = null
+    }
+
+    private fun commitPending() {
+        if (pending.isNotBlank()) onText(cleanTranscript(pending), true)
+        pending = ""
+    }
+
+    private fun Bundle.best(): String =
+        getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+
+    // ---------- RecognitionListener ----------
+
+    override fun onReadyForSpeech(params: Bundle?) {
+        ready = true
+    }
+
+    override fun onBeginningOfSpeech() {
+        quietRestarts = 0
+    }
+
+    override fun onRmsChanged(rmsdB: Float) {
+        // Roughly -2 (silence) .. 10 (loud).
+        level = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+    }
+
+    override fun onPartialResults(partialResults: Bundle?) {
+        val words = partialResults?.best().orEmpty()
+        if (words.isBlank()) return
+        pending = words
+        heardAnything = true
+        onText(words, false)
+    }
+
+    /** One finished sentence (older Android): write it, and listen again straight away. */
+    override fun onResults(results: Bundle?) {
+        val words = results?.best().orEmpty()
+        pending = ""
+        if (listening) listenAgain() // restart first, so the gap where words get lost is tiny
+        if (words.isNotBlank()) onText(cleanTranscript(words), true)
+        if (!listening) finish()
+    }
+
+    /** Android 13+: a sentence finished, but the session keeps listening. */
+    override fun onSegmentResults(segmentResults: Bundle) {
+        val words = segmentResults.best()
+        pending = ""
+        if (words.isNotBlank()) {
+            quietRestarts = 0
+            onText(cleanTranscript(words), true)
+        }
+    }
+
+    /** Android 13+: the long session ended (5 minutes, or you tapped stop). */
+    override fun onEndOfSegmentedSession() {
+        commitPending()
+        if (listening) listenAgain() else finish()
+    }
+
+    override fun onError(error: Int) {
+        commitPending()
+        when (error) {
+            // Heard nothing / nothing it understood: just keep listening, up to ~1 minute of quiet.
+            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                if (listening && ++quietRestarts <= 8) {
+                    listenAgain()
+                    return
+                }
+            }
+            // Still busy finishing the last session: start fresh a moment later.
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_CLIENT -> if (listening && ++quietRestarts <= 8) {
+                recognizer?.destroy()
+                recognizer = null
+                main.postDelayed({ listenAgain() }, 300)
+                return
+            }
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS ->
+                onError("Allow the microphone in the app's settings to dictate.")
+            SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
+                if (listening) onError("No internet. Download the offline speech pack for your language in the phone's settings.")
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+                onError("This language isn't available for dictation on your phone.")
+            // Anything else right at the start: the phone's speech service may not support the
+            // long Android 13 session. Try once more the classic way before giving up.
+            else -> if (listening && segmented && !heardAnything) {
+                segmented = false
+                recognizer?.destroy()
+                recognizer = null
+                main.postDelayed({ listenAgain() }, 300)
+                return
             }
         }
-    }
-}
-
-actual class Microphone actual constructor() {
-    private var record: AudioRecord? = null
-    private var shorts = ShortArray(0)
-
-    @SuppressLint("MissingPermission") // asked for before dictation starts
-    actual fun open(): Boolean {
-        val min = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        if (min <= 0) return false
-        val r = try {
-            AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(min, RATE))
-        } catch (_: Exception) {
-            return false
-        }
-        if (r.state != AudioRecord.STATE_INITIALIZED) {
-            r.release()
-            return false
-        }
-        r.startRecording()
-        record = r
-        return true
+        listening = false
+        finish()
     }
 
-    actual fun read(buffer: FloatArray): Int {
-        val r = record ?: return -1
-        if (shorts.size < buffer.size) shorts = ShortArray(buffer.size)
-        val n = r.read(shorts, 0, buffer.size)
-        for (i in 0 until n) buffer[i] = shorts[i] / 32768f
-        return n
-    }
-
-    actual fun close() {
-        record?.let {
-            runCatching { it.stop() }
-            it.release()
-        }
-        record = null
-    }
-}
-
-actual class Transcriber actual constructor(paths: SpeechModelPaths, language: String, threads: Int) {
-    private val vad = Vad(
-        config = VadModelConfig(
-            sileroVadModelConfig = SileroVadModelConfig(
-                model = paths.vad,
-                threshold = 0.5f,
-                minSilenceDuration = 0.5f, // a breath isn't the end of a sentence
-                minSpeechDuration = 0.25f,
-                windowSize = 512,
-                maxSpeechDuration = 12f, // long run-on sentences are cut, so text keeps coming
-            ),
-            sampleRate = RATE,
-            numThreads = 1,
-        ),
-    )
-    private val recognizer = OfflineRecognizer(
-        config = OfflineRecognizerConfig(
-            modelConfig = OfflineModelConfig(
-                whisper = OfflineWhisperModelConfig(encoder = paths.encoder, decoder = paths.decoder, language = language),
-                tokens = paths.tokens,
-                numThreads = threads,
-            ),
-            decodingMethod = "greedy_search",
-        ),
-    )
-    private var pending = FloatArray(0)
-
-    actual fun accept(samples: FloatArray) {
-        // The voice detector wants exactly 512 samples at a time.
-        pending += samples
-        var at = 0
-        while (pending.size - at >= 512) {
-            vad.acceptWaveform(pending.copyOfRange(at, at + 512))
-            at += 512
-        }
-        pending = pending.copyOfRange(at, pending.size)
-    }
-
-    actual fun nextSentence(): FloatArray? {
-        if (vad.empty()) return null
-        val samples = vad.front().samples
-        vad.pop()
-        return samples
-    }
-
-    actual fun speaking(): Boolean = vad.isSpeechDetected()
-
-    actual fun flush() {
-        pending = FloatArray(0)
-        vad.flush()
-    }
-
-    actual fun transcribe(samples: FloatArray): String {
-        val stream = recognizer.createStream()
-        try {
-            stream.acceptWaveform(samples, RATE)
-            recognizer.decode(stream)
-            return recognizer.getResult(stream).text
-        } finally {
-            stream.release()
-        }
-    }
-
-    actual fun release() {
-        vad.release()
-        recognizer.release()
-    }
+    override fun onEndOfSpeech() {}
+    override fun onBufferReceived(buffer: ByteArray?) {}
+    override fun onEvent(eventType: Int, params: Bundle?) {}
 }

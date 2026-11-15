@@ -1,6 +1,5 @@
 package dev.sushnt.journal.ui
 
-import dev.sushnt.journal.data.SpeechModel
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -91,12 +90,10 @@ fun EntryScreen(
     var dictationNote by remember { mutableStateOf<String?>(null) }
     val dictation = rememberDictation(
         language = prefs.dictationLanguage,
-        model = SpeechModel.fromId(prefs.speechModel) ?: defaultSpeechModel,
         onText = { words, final -> editorHandle.dictate(words, final) },
         onStopped = { editorHandle.endDictation() },
         onError = { dictationNote = it },
     )
-    DictationDialogs(dictation)
     LaunchedEffect(dictationNote) {
         if (dictationNote != null) {
             kotlinx.coroutines.delay(5_000)
@@ -114,14 +111,14 @@ fun EntryScreen(
                 }
             }
             Spacer(Modifier.weight(1f))
-            (dictationNote ?: dictation.status ?: if (dictation.ready) "Listening…" else null)?.let {
+            (dictationNote ?: if (dictation?.listening == true) (if (dictation!!.ready) "Listening…" else "Getting ready…") else null)?.let {
                 Text(it, color = JournalColors.Accent, fontSize = 12.sp, maxLines = 1, modifier = Modifier.padding(end = 4.dp).weight(1f, fill = false))
             }
             if (sheet != null) {
                 IconAction(Glyph.Back, "Newer entry", JournalColors.Text, { sheet.onNewer?.invoke() }, enabled = sheet.onNewer != null)
                 IconAction(Glyph.Forward, "Older entry", JournalColors.Text, { sheet.onOlder?.invoke() }, enabled = sheet.onOlder != null)
             }
-            MicButton(dictation)
+            if (dictation != null) MicButton(dictation)
             IconAction(Glyph.Image, "Add photos where the cursor is", JournalColors.Accent, { addPhoto++ })
             // Same as swiping the card away: it can be undone for a few seconds.
             IconAction(Glyph.Trash, "Delete entry", JournalColors.Danger, onDelete)

@@ -1,6 +1,5 @@
 package dev.sushnt.journal.ui
 
-import dev.sushnt.journal.data.SpeechModel
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -88,12 +87,10 @@ fun WriteScreen(
     var dictationNote by remember { mutableStateOf<String?>(null) }
     val dictation = rememberDictation(
         language = prefs.dictationLanguage,
-        model = SpeechModel.fromId(prefs.speechModel) ?: defaultSpeechModel,
         onText = { words, final -> editorHandle.dictate(words, final) },
         onStopped = { editorHandle.endDictation() },
         onError = { dictationNote = it },
     )
-    DictationDialogs(dictation)
     LaunchedEffect(dictationNote) {
         if (dictationNote != null) {
             kotlinx.coroutines.delay(5_000)
@@ -215,13 +212,12 @@ fun WriteScreen(
                 Modifier.fillMaxWidth().padding(top = 2.dp, bottom = bottomGap),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val listening = dictation.listening || dictation.status != null
+                val listening = dictation?.listening == true
                 Text(
                     when {
                         dictationNote != null -> dictationNote!!
-                        dictation.status != null -> dictation.status!!
-                        dictation.ready -> "Listening… tap the mic to stop"
-                        listening -> "Getting ready…"
+                        listening && !dictation!!.ready -> "Getting ready…"
+                        listening -> "Listening… tap the mic to stop"
                         else -> "${timeLabel(startedAt)} · ${if (words == 1) "1 word" else "$words words"}"
                     },
                     color = if (listening) JournalColors.Accent else JournalColors.Muted,
@@ -229,7 +225,7 @@ fun WriteScreen(
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                MicButton(dictation)
+                if (dictation != null) MicButton(dictation)
                 IconAction(Glyph.Image, "Add photo", Color(0xFFC9CEDB), { addPhoto++ })
                 if (keyboardOpen) {
                     Spacer(Modifier.width(4.dp))
@@ -256,11 +252,11 @@ fun WriteScreen(
                     FooterLabel("${readMinutes(words)} min read", JournalColors.Muted)
                 }
                 Spacer(Modifier.weight(1f))
-                (dictationNote ?: dictation.status ?: if (dictation.ready) "Listening… click the mic to stop" else null)?.let {
+                dictationNote?.let {
                     FooterLabel(it, JournalColors.Accent)
                     Spacer(Modifier.width(8.dp))
                 }
-                MicButton(dictation)
+                if (dictation != null) MicButton(dictation)
                 // Adds photos where the cursor is.
                 TextButton(onClick = { addPhoto++ }) {
                     LineIcon(Glyph.Image, JournalColors.Accent)

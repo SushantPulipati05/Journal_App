@@ -17,7 +17,7 @@ appears on your other devices. It works fully offline; sync catches up when the 
 **Writing**
 - Opens straight onto a blank entry. The first line is the title and everything below it is the body.
 - **Photos inline** between paragraphs: pick from the gallery or take one with the camera. Resize by dragging the edges (aspect ratio kept). Photos are shrunk to 1600 px and EXIF data (location etc.) is stripped before saving.
-- **Voice dictation that runs on the device**: OpenAI Whisper via sherpa-onnx, with voice detection to split sentences. Filler words ("um", "uh") and stuttered repeats are cleaned out. It works offline after a one-time model download and supports multiple languages.
+- **Voice dictation**: words appear live as you speak, using the phone's speech recognition, in English and 9 Indian languages. Filler words ("um", "uh") and stuttered repeats are cleaned out. On Android 13+ it keeps listening across pauses, so words aren't lost between sentences. On Windows the mic button opens Windows voice typing.
 - Autosave while typing, word count, adjustable text size and serif/sans fonts.
 
 **Browsing**
@@ -86,7 +86,7 @@ flowchart LR
 | **Storage** | S3-compatible bucket via **minio-go** |
 | **Email** | Resend (password-reset codes) |
 | **Client** | Kotlin Multiplatform, **Compose Multiplatform**, Koin (DI), Ktor (HTTP), AndroidX SQLite (bundled), WorkManager (background sync) |
-| **On-device ML** | sherpa-onnx (ONNX Runtime) with Whisper + Silero VAD |
+| **Speech** | Android `SpeechRecognizer` (segmented sessions on Android 13+), Windows voice typing on desktop |
 | **Infra** | Docker (multi-stage, distroless, non-root), Railway (health-checked deploys), GitHub Actions CI |
 | **Testing** | Go tests against a real Postgres via **testcontainers**; Kotlin tests for the sync engine, text merge and API client |
 

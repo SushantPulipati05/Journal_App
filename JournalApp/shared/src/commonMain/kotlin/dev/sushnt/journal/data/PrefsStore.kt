@@ -33,25 +33,24 @@ data class AppPrefs(
     val sidebarCollapsed: Boolean = false,
     /** Desktop/tablet Journals page: cards or one long diary stream. */
     val journalsView: JournalsView = JournalsView.Gallery,
-    /** Language you dictate in, as a Whisper code ("en", "hi"...). "" = detect it each time. */
-    val dictationLanguage: String = "",
-    /** Speech model id ("tiny", "base", "small"). "" = the default for this device. */
-    val speechModel: String = "",
+    /** Language for dictation, e.g. "en-IN". "" = the phone's own language. */
+    val dictationLanguage: String = "en-IN",
 )
 
 /** The choices offered in Settings → Dictation. */
 val DictationLanguages = listOf(
-    "" to "Detect",
-    "en" to "English",
-    "hi" to "Hindi",
-    "mr" to "Marathi",
-    "gu" to "Gujarati",
-    "ta" to "Tamil",
-    "te" to "Telugu",
-    "kn" to "Kannada",
-    "ml" to "Malayalam",
-    "bn" to "Bengali",
-    "pa" to "Punjabi",
+    "en-IN" to "English (India)",
+    "en-US" to "English (US)",
+    "hi-IN" to "Hindi",
+    "mr-IN" to "Marathi",
+    "gu-IN" to "Gujarati",
+    "ta-IN" to "Tamil",
+    "te-IN" to "Telugu",
+    "kn-IN" to "Kannada",
+    "ml-IN" to "Malayalam",
+    "bn-IN" to "Bengali",
+    "pa-IN" to "Punjabi",
+    "" to "Phone's language",
 )
 
 /** Stores [AppPrefs] in a tiny SQLite file next to the journal. Survives sign-out. */
@@ -79,7 +78,6 @@ class PrefsStore(
             write("sidebar_collapsed", next.sidebarCollapsed.toString())
             write("journals_view", next.journalsView.name)
             write("dictation_language", next.dictationLanguage)
-            write("speech_model", next.speechModel)
         }
     }
 
@@ -93,10 +91,8 @@ class PrefsStore(
             continueLastEntry = map["continue_last"]?.toBooleanStrictOrNull() ?: defaults.continueLastEntry,
             sidebarCollapsed = map["sidebar_collapsed"]?.toBooleanStrictOrNull() ?: defaults.sidebarCollapsed,
             journalsView = JournalsView.entries.firstOrNull { it.name == map["journals_view"] } ?: defaults.journalsView,
-            // Older versions stored phone-style tags ("en-IN"); Whisper wants just "en".
-            dictationLanguage = map["dictation_language"]?.substringBefore('-')
-                ?.takeIf { code -> DictationLanguages.any { it.first == code } } ?: defaults.dictationLanguage,
-            speechModel = map["speech_model"] ?: defaults.speechModel,
+            dictationLanguage = map["dictation_language"]
+                ?.takeIf { tag -> DictationLanguages.any { it.first == tag } } ?: defaults.dictationLanguage,
         )
     }
 

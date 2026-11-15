@@ -5,8 +5,6 @@ package dev.sushnt.journal.ui
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.runtime.remember
 import org.koin.compose.koinInject
-import dev.sushnt.journal.data.SpeechModel
-import dev.sushnt.journal.data.SpeechModels
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.animateFloatAsState
@@ -201,8 +199,7 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
             // ---------- dictation ----------
             Group("Dictation") {
                 Text(
-                    "Dictation runs on this device with Whisper, so it works offline. Pick the language you speak, " +
-                        "or let it detect it.",
+                    "The language you speak when you tap the mic. Picking the right one makes a big difference to accuracy.",
                     color = JournalColors.Muted,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -226,53 +223,6 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
                                 .clickable(role = Role.RadioButton) { vm.updatePrefs { it.copy(dictationLanguage = code) } }
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                         )
-                    }
-                }
-                Divider()
-                Text(
-                    "Speech model",
-                    color = JournalColors.Muted,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-                )
-                val speechModels = koinInject<SpeechModels>()
-                var modelsChanged by remember { mutableStateOf(0) }
-                val activeModel = SpeechModel.fromId(prefs.speechModel) ?: defaultSpeechModel
-                SpeechModel.entries.forEachIndexed { i, model ->
-                    if (i > 0) Divider()
-                    val chosen = model == activeModel
-                    val installed = remember(modelsChanged, model) { speechModels.isInstalled(model) }
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 56.dp)
-                            .clickable(role = Role.RadioButton) { vm.updatePrefs { it.copy(speechModel = model.id) } }
-                            .padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                model.label,
-                                color = if (chosen) JournalColors.TextStrong else JournalColors.Text,
-                                fontSize = 15.sp,
-                                fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                            Text(
-                                "${model.detail} · ${if (installed) "Downloaded" else "${model.sizeMb} MB download"}",
-                                color = JournalColors.Muted,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        if (chosen) LineIcon(Glyph.Check, JournalColors.Accent, size = 18.dp, strokeWidth = 2.2f)
-                        if (installed) {
-                            IconAction(Glyph.Trash, "Delete the ${model.label} model from this device", JournalColors.Muted, {
-                                speechModels.delete(model)
-                                modelsChanged++
-                            })
-                        } else {
-                            Spacer(Modifier.width(8.dp))
-                        }
                     }
                 }
             }

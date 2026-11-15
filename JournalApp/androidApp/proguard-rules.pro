@@ -29,6 +29,3 @@
 -dontwarn org.openjsse.**
 -dontwarn java.lang.management.**
 
-# Offline speech recognition (sherpa-onnx): its native code reads these classes and
-# their fields by name, so nothing in it may be renamed or removed.
--keep class com.k2fsa.sherpa.onnx.** { *; }

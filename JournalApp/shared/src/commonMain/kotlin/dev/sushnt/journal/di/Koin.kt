@@ -10,7 +10,6 @@ import dev.sushnt.journal.data.PrefsStore
 import dev.sushnt.journal.data.PhotoStore
 import dev.sushnt.journal.data.PhotoSync
 import dev.sushnt.journal.data.SessionManager
-import dev.sushnt.journal.data.SpeechModels
 import dev.sushnt.journal.data.SqliteTokenStore
 import dev.sushnt.journal.data.SyncController
 import dev.sushnt.journal.data.SyncEngine
@@ -43,7 +42,6 @@ private fun appModule(config: PlatformConfig) = module {
     single { PrefsStore.open(BundledSQLiteDriver(), "${config.dataDir}/prefs.db") }
     single { PhotoStore.open(BundledSQLiteDriver(), config.dataDir) }
     single { PhotoSync(get(), get(), get()) }
-    single { SpeechModels(config.dataDir) }
     single { SyncEngine(get(), get(), photoSync = get()) }
     single { SyncController(get(), get()) }
     single { SessionManager(get(), get(), get(), get(), get(), photos = get()) }
