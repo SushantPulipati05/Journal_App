@@ -19,15 +19,21 @@ import (
 type Client struct {
 	baseURL string
 	model   string
+	threads int
 	http    *http.Client
 }
 
 // NewOllama: baseURL like "http://ollama.railway.internal:11434", model like "embeddinggemma".
-func NewOllama(baseURL, model string) *Client {
+//
+// threads caps the CPU threads the model uses (0 = Ollama decides). This matters
+// in containers: Ollama counts the host machine's cores (often 32+), not the
+// few the container may use, and then crawls as the threads fight over them.
+func NewOllama(baseURL, model string, threads int) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		model:   model,
-		http:    &http.Client{Timeout: 90 * time.Second},
+		threads: threads,
+		http:    &http.Client{Timeout: 3 * time.Minute},
 	}
 }
 
@@ -65,9 +71,10 @@ func (c *Client) EmbedQuery(ctx context.Context, q string) ([]float32, error) {
 }
 
 type embedRequest struct {
-	Model    string   `json:"model"`
-	Input    []string `json:"input"`
-	Truncate bool     `json:"truncate"`
+	Model    string         `json:"model"`
+	Input    []string       `json:"input"`
+	Truncate bool           `json:"truncate"`
+	Options  map[string]any `json:"options,omitempty"`
 }
 
 type embedResponse struct {
@@ -78,13 +85,17 @@ func (c *Client) embed(ctx context.Context, inputs []string) ([][]float32, error
 	if len(inputs) == 0 {
 		return nil, nil
 	}
-	body, _ := json.Marshal(embedRequest{Model: c.model, Input: inputs, Truncate: true})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/embed", bytes.NewReader(body))
+	req := embedRequest{Model: c.model, Input: inputs, Truncate: true}
+	if c.threads > 0 {
+		req.Options = map[string]any{"num_thread": c.threads}
+	}
+	body, _ := json.Marshal(req)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/embed", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := c.http.Do(req)
+	httpReq.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("embed: %w", err)
 	}

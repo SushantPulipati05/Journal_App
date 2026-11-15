@@ -78,7 +78,7 @@ func newSecureServer(t *testing.T) (*Server, http.Handler) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	srv := NewServer(testPool, logger, testTokens, false).
 		WithEncryption(keyring).
-		WithEmbedder(embed.NewOllama(fakeOllama(t).URL, "test-model"))
+		WithEmbedder(embed.NewOllama(fakeOllama(t).URL, "test-model", 0))
 	srv.authLimiter = newIPLimiter(rate.Inf, 1_000_000, false)
 	return srv, srv.Routes()
 }

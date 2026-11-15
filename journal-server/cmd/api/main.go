@@ -126,8 +126,8 @@ func run() error {
 	}
 
 	if cfg.EmbeddingURL != "" {
-		server.WithEmbedder(embed.NewOllama(cfg.EmbeddingURL, cfg.EmbeddingModel))
-		logger.Info("semantic search enabled", "url", cfg.EmbeddingURL, "model", cfg.EmbeddingModel)
+		server.WithEmbedder(embed.NewOllama(cfg.EmbeddingURL, cfg.EmbeddingModel, cfg.EmbeddingThreads))
+		logger.Info("semantic search enabled", "url", cfg.EmbeddingURL, "model", cfg.EmbeddingModel, "threads", cfg.EmbeddingThreads)
 		go server.RunEmbedWorker(ctx)
 	} else {
 		logger.Warn("EMBEDDING_URL not set: semantic search is disabled")

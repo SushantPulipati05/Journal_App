@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,6 +52,8 @@ type Config struct {
 	// EMBEDDING_URL empty = semantic search is off.
 	EmbeddingURL   string
 	EmbeddingModel string
+	// EmbeddingThreads: CPU threads the model may use (EMBEDDING_THREADS, default 4).
+	EmbeddingThreads int
 }
 
 // PhotosEnabled reports whether all photo storage settings are present.
@@ -79,6 +82,7 @@ func Load() (Config, error) {
 		EmbeddingURL:      os.Getenv("EMBEDDING_URL"),
 		EmbeddingModel:    getEnv("EMBEDDING_MODEL", "embeddinggemma"),
 	}
+	cfg.EmbeddingThreads, _ = strconv.Atoi(getEnv("EMBEDDING_THREADS", "4"))
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
 	}

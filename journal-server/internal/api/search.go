@@ -35,8 +35,8 @@ const (
 
 	// A job is leased for this long; if the worker dies, another try comes later.
 	embedLease = 5 * time.Minute
-	// Embeddings per request to the model.
-	embedBatch = 16
+	// Embeddings per request to the model: small batches finish well within the timeout.
+	embedBatch = 4
 )
 
 // ---------- small helpers used by the entry handlers ----------

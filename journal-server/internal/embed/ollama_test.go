@@ -24,12 +24,12 @@ func TestOllamaClient(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewOllama(srv.URL+"/", "embeddinggemma")
+	c := NewOllama(srv.URL+"/", "embeddinggemma", 2)
 	vecs, err := c.EmbedDocuments(context.Background(), "", []string{"a", "b"})
 	if err != nil || len(vecs) != 2 {
 		t.Fatalf("%v %v", vecs, err)
 	}
-	if got.Model != "embeddinggemma" || !strings.HasPrefix(got.Input[0], "title: none | text: ") {
+	if got.Model != "embeddinggemma" || !strings.HasPrefix(got.Input[0], "title: none | text: ") || got.Options["num_thread"] != float64(2) {
 		t.Fatalf("request %+v", got)
 	}
 	if d := Dot(vecs[0], vecs[1]); d < 0.999 || d > 1.001 {
@@ -46,7 +46,7 @@ func TestOllamaError(t *testing.T) {
 		http.Error(w, "model not found", http.StatusNotFound)
 	}))
 	defer srv.Close()
-	if _, err := NewOllama(srv.URL, "x").EmbedQuery(context.Background(), "q"); err == nil || !strings.Contains(err.Error(), "404") {
+	if _, err := NewOllama(srv.URL, "x", 0).EmbedQuery(context.Background(), "q"); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("want 404 error, got %v", err)
 	}
 }
