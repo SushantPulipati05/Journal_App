@@ -1,7 +1,13 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package dev.sushnt.journal.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dev.sushnt.journal.api.ApiError
+import dev.sushnt.journal.api.ApiResult
+import dev.sushnt.journal.api.JournalApi
+import dev.sushnt.journal.api.SearchHitDto
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
 import dev.sushnt.journal.data.PhotoStore
@@ -16,6 +22,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -25,11 +33,26 @@ import kotlinx.datetime.LocalDate
 /** One day in the Journals list: "Today", "Yesterday", "3 Nov"... */
 data class DaySection(val header: String, val entries: List<Entry>)
 
+/** An entry found by meaning, with the paragraph that matched. */
+data class MeaningHit(val entry: Entry, val snippet: String, val score: Float)
+
+/** "Similar in meaning" search, done by the server. */
+sealed interface MeaningSearch {
+    /** Query too short, or empty. */
+    data object Idle : MeaningSearch
+    data object Searching : MeaningSearch
+    /** [pending]: entries still being prepared for search on the server. */
+    data class Results(val hits: List<MeaningHit>, val pending: Int) : MeaningSearch
+    /** Offline, or search isn't set up on the server. Word search still works. */
+    data class Unavailable(val reason: String) : MeaningSearch
+}
+
 /** The Journals tab: every entry, grouped by day, with search and the streak. */
 class EntriesViewModel(
     private val store: EntryStore,
     private val syncController: SyncController,
     private val photos: PhotoStore,
+    private val api: JournalApi,
 ) : ViewModel() {
 
     /** An entry swiped away but not deleted yet, so "Undo" can still bring it back. */
@@ -65,6 +88,60 @@ class EntriesViewModel(
                 DaySection(dayHeader(day, now), dayEntries.sortedByDescending { it.createdAt })
             }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** What the server answered for the current query (hits are entry ids). */
+    private sealed interface RawMeaning {
+        data object Idle : RawMeaning
+        data object Searching : RawMeaning
+        data class Hits(val hits: List<SearchHitDto>, val pending: Int) : RawMeaning
+        data class Failed(val reason: String) : RawMeaning
+    }
+
+    private val rawMeaning: Flow<RawMeaning> = _query
+        .map { it.trim() }
+        .distinctUntilChanged()
+        .transformLatest { q ->
+            // transformLatest drops the old search as soon as you type more.
+            if (q.length < MIN_MEANING_QUERY) {
+                emit(RawMeaning.Idle)
+                return@transformLatest
+            }
+            emit(RawMeaning.Searching)
+            delay(500) // wait until you stop typing
+            emit(
+                when (val r = api.search(q)) {
+                    is ApiResult.Ok -> RawMeaning.Hits(r.value.results, r.value.pending)
+                    is ApiResult.Err -> RawMeaning.Failed(
+                        when (r.error) {
+                            is ApiError.Network -> "Search by meaning needs the internet."
+                            else -> "Search by meaning isn't available right now."
+                        },
+                    )
+                },
+            )
+        }
+
+    /**
+     * Entries similar in meaning to the query, besides the ones that contain its words
+     * (those are already in [sections]). Only entries on this device are shown.
+     */
+    val meaning: StateFlow<MeaningSearch> = combine(rawMeaning, entries, sections) { raw, list, secs ->
+        when (raw) {
+            RawMeaning.Idle -> MeaningSearch.Idle
+            RawMeaning.Searching -> MeaningSearch.Searching
+            is RawMeaning.Failed -> MeaningSearch.Unavailable(raw.reason)
+            is RawMeaning.Hits -> {
+                val byId = list.associateBy { it.id }
+                val wordMatches = secs.flatMapTo(HashSet<String>()) { s -> s.entries.map { it.id } }
+                val hits = raw.hits.mapNotNull { h ->
+                    byId[h.entryId]?.takeIf { it.id !in wordMatches }?.let { MeaningHit(it, h.snippet, h.score) }
+                }
+                // Keep the close ones: within a margin of the best match, at most 8.
+                val best = hits.maxOfOrNull { it.score } ?: 0f
+                MeaningSearch.Results(hits.filter { it.score >= best - MEANING_MARGIN }.take(8), raw.pending)
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MeaningSearch.Idle)
 
     /** Days in a row with at least one entry. */
     val streak: StateFlow<Int> = entries
@@ -162,3 +239,9 @@ class EntriesViewModel(
         }
     }
 }
+
+/** Search by meaning starts at this many characters. */
+private const val MIN_MEANING_QUERY = 3
+
+/** How far below the best match a result may score and still be shown. */
+private const val MEANING_MARGIN = 0.12f

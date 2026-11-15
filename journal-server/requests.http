@@ -144,3 +144,7 @@ Authorization: Bearer {{login.response.body.access_token}}
 ### Pull in small pages (follow next_cursor while has_more is true)
 GET {{base}}/sync/pull?since=0&limit=1
 Authorization: Bearer {{login.response.body.access_token}}
+
+### Search by meaning (needs EMBEDDING_URL and the Ollama service)
+GET {{base}}/search?q=when was I stressed about exams
+Authorization: Bearer {{login.response.body.access_token}}

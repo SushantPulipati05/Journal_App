@@ -41,6 +41,16 @@ type Config struct {
 	S3AccessKeyID     string
 	S3SecretAccessKey string
 	S3Bucket          string
+
+	// EncryptionKey: base64 of 32 random bytes (openssl rand -base64 32).
+	// Set = entries are encrypted at rest. Keep a copy somewhere safe: if it is
+	// lost, every encrypted entry is lost with it.
+	EncryptionKey string
+
+	// Semantic search: an Ollama server with an embedding model.
+	// EMBEDDING_URL empty = semantic search is off.
+	EmbeddingURL   string
+	EmbeddingModel string
 }
 
 // PhotosEnabled reports whether all photo storage settings are present.
@@ -65,6 +75,9 @@ func Load() (Config, error) {
 		S3AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
 		S3SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
 		S3Bucket:          os.Getenv("S3_BUCKET"),
+		EncryptionKey:     os.Getenv("ENCRYPTION_MASTER_KEY"),
+		EmbeddingURL:      os.Getenv("EMBEDDING_URL"),
+		EmbeddingModel:    getEnv("EMBEDDING_MODEL", "embeddinggemma"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

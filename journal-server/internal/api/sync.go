@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/SushantPulipati05/journal-server/internal/db"
+	"github.com/SushantPulipati05/journal-server/internal/vault"
 )
 
 const (
@@ -100,12 +101,19 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The user's encryption key (nil when encryption is off).
+	uc, err := s.vault.ForUser(ctx, userID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+
 	q := s.queries.WithTx(tx)
 	now := time.Now()
 	results := make([]pushResult, 0, len(req.Changes))
 	var removedPhotos []uuid.UUID
 	for _, c := range req.Changes {
-		res, err := applyChange(ctx, q, userID, c, now)
+		res, err := applyChange(ctx, q, uc, userID, c, now)
 		if err != nil {
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23503" {
@@ -115,6 +123,13 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 			}
 			s.serverError(w, r, err)
 			return
+		}
+		// Semantic search: re-embed the entry (or forget it if it was deleted).
+		if res.Status == statusApplied {
+			if err := s.queueEmbedding(ctx, tx, userID, c.ID, c.DeletedAt != nil); err != nil {
+				s.serverError(w, r, err)
+				return
+			}
 		}
 		// An entry that was just deleted takes its photos with it.
 		if res.Status == statusApplied && c.DeletedAt != nil {
@@ -133,12 +148,13 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.removeFiles(userID, removedPhotos)
+	s.wakeEmbedWorker()
 	writeJSON(w, http.StatusOK, pushResponse{Results: results})
 }
 
 // applyChange validates one change and tries to store it. A returned error is
 // a real failure (database down); a bad change is reported in the result.
-func applyChange(ctx context.Context, q *db.Queries, userID uuid.UUID, c syncChange, now time.Time) (pushResult, error) {
+func applyChange(ctx context.Context, q *db.Queries, uc *vault.UserCipher, userID uuid.UUID, c syncChange, now time.Time) (pushResult, error) {
 	res := pushResult{ID: c.ID}
 	invalid := func(msg string) (pushResult, error) {
 		res.Status, res.Error = statusInvalid, msg
@@ -169,8 +185,9 @@ func applyChange(ctx context.Context, q *db.Queries, userID uuid.UUID, c syncCha
 	entry, err := q.UpsertEntry(ctx, db.UpsertEntryParams{
 		ID:        c.ID,
 		UserID:    userID,
-		Title:     c.Title,
-		Body:      c.Body,
+		// Encrypted here, after validation (limits apply to what the user wrote).
+		Title:     uc.Encrypt(c.Title, c.ID.String(), "title"),
+		Body:      uc.Encrypt(c.Body, c.ID.String(), "body"),
 		CreatedAt: c.CreatedAt,
 		UpdatedAt: c.UpdatedAt,
 		DeletedAt: c.DeletedAt,
@@ -242,8 +259,20 @@ func (s *Server) handlePull(w http.ResponseWriter, r *http.Request) {
 		rows = rows[:limit]
 	}
 
+	uc, err := s.vault.ForUser(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+
 	resp := pullResponse{Changes: make([]pullChange, 0, len(rows)), NextCursor: since, HasMore: hasMore}
 	for _, e := range rows {
+		if e.DeletedAt == nil {
+			if e, err = decryptEntry(uc, e); err != nil {
+				s.serverError(w, r, err)
+				return
+			}
+		}
 		c := pullChange{
 			syncChange: syncChange{
 				ID:        e.ID,

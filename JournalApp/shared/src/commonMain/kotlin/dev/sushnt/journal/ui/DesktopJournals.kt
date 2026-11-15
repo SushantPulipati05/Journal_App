@@ -113,6 +113,7 @@ fun DesktopJournals(
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
     val query by vm.query.collectAsState()
+    val meaning by vm.meaning.collectAsState()
     val streak by vm.streak.collectAsState()
     val pendingDelete by vm.pendingDelete.collectAsState()
     val loading by vm.loading.collectAsState()
@@ -142,6 +143,8 @@ fun DesktopJournals(
                 onViewChange = onViewChange,
             )
             Spacer(Modifier.height(20.dp))
+            // Entries about the same thing, even without the exact words.
+            if (!loading && all.isNotEmpty()) MeaningResultsRow(meaning, prefs, onOpen)
 
             val body = when {
                 loading -> Body.Loading
@@ -162,7 +165,7 @@ fun DesktopJournals(
                     }
                     Body.Empty -> Text(
                         if (all.isEmpty()) "Nothing here yet.\nWhat you write on the Write page shows up here."
-                        else "No entries match \"$query\".",
+                        else "No entries contain \"$query\".",
                         color = JournalColors.Muted,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(top = 64.dp),

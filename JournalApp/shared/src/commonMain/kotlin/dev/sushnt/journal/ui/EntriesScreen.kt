@@ -91,6 +91,7 @@ fun JournalsScreen(
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
     val query by vm.query.collectAsState()
+    val meaning by vm.meaning.collectAsState()
     val streak by vm.streak.collectAsState()
     val syncing by vm.syncing.collectAsState()
     val message by vm.message.collectAsState()
@@ -158,7 +159,7 @@ fun JournalsScreen(
                 item {
                     Text(
                         if (all.isEmpty()) "Nothing here yet.\nWhat you write on the Write tab shows up here."
-                        else "No entries match \"$query\".",
+                        else "No entries contain \"$query\".",
                         color = JournalColors.Muted,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth().padding(top = 48.dp),
@@ -175,6 +176,12 @@ fun JournalsScreen(
                     SwipeToDelete(Modifier.animateItem(), onDelete = { vm.deleteWithUndo(entry) }) {
                         EntryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) })
                     }
+                }
+            }
+            // Entries that don't contain the words but are about the same thing.
+            if (!loading && all.isNotEmpty() && meaning != MeaningSearch.Idle) {
+                item(key = "meaning") {
+                    MeaningResultsColumn(meaning, prefs, onOpen, Modifier.animateItem())
                 }
             }
         }

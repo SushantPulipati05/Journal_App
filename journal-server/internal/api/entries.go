@@ -72,12 +72,18 @@ func (s *Server) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 	if req.ID != nil {
 		id = *req.ID
 	}
+	userID := userIDFrom(r.Context())
+	uc, err := s.vault.ForUser(r.Context(), userID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 
 	entry, err := s.queries.CreateEntry(r.Context(), db.CreateEntryParams{
 		ID:     id,
-		UserID: userIDFrom(r.Context()),
-		Title:  req.Title,
-		Body:   req.Body,
+		UserID: userID,
+		Title:  uc.Encrypt(req.Title, id.String(), "title"),
+		Body:   uc.Encrypt(req.Body, id.String(), "body"),
 	})
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -94,7 +100,8 @@ func (s *Server) handleCreateEntry(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, toEntryResponse(entry))
+	s.afterEntryChange(r, userID, id, false)
+	s.writeEntry(w, r, http.StatusCreated, uc, entry)
 }
 
 // GET /entries?limit=50&offset=0
@@ -120,8 +127,17 @@ func (s *Server) handleListEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	uc, err := s.vault.ForUser(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	resp := make([]entryResponse, 0, len(entries)) // [] instead of null when empty
 	for _, e := range entries {
+		if e, err = decryptEntry(uc, e); err != nil {
+			s.serverError(w, r, err)
+			return
+		}
 		resp = append(resp, toEntryResponse(e))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -149,7 +165,12 @@ func (s *Server) handleGetEntry(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toEntryResponse(entry))
+	uc, err := s.vault.ForUser(r.Context(), userIDFrom(r.Context()))
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
+	s.writeEntry(w, r, http.StatusOK, uc, entry)
 }
 
 // PUT /entries/{id}
@@ -168,11 +189,17 @@ func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	userID := userIDFrom(r.Context())
+	uc, err := s.vault.ForUser(r.Context(), userID)
+	if err != nil {
+		s.serverError(w, r, err)
+		return
+	}
 	entry, err := s.queries.UpdateEntry(r.Context(), db.UpdateEntryParams{
 		ID:     id,
-		UserID: userIDFrom(r.Context()),
-		Title:  req.Title,
-		Body:   req.Body,
+		UserID: userID,
+		Title:  uc.Encrypt(req.Title, id.String(), "title"),
+		Body:   uc.Encrypt(req.Body, id.String(), "body"),
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "entry not found")
@@ -182,7 +209,8 @@ func (s *Server) handleUpdateEntry(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toEntryResponse(entry))
+	s.afterEntryChange(r, userID, id, false)
+	s.writeEntry(w, r, http.StatusOK, uc, entry)
 }
 
 // DELETE /entries/{id}  (soft delete)
@@ -203,6 +231,7 @@ func (s *Server) handleDeleteEntry(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "entry not found")
 		return
 	}
+	s.afterEntryChange(r, userIDFrom(r.Context()), id, true)
 	w.WriteHeader(http.StatusNoContent)
 }
 

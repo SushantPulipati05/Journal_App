@@ -12,8 +12,10 @@ import (
 
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/db"
+	"github.com/SushantPulipati05/journal-server/internal/embed"
 	"github.com/SushantPulipati05/journal-server/internal/mail"
 	"github.com/SushantPulipati05/journal-server/internal/storage"
+	"github.com/SushantPulipati05/journal-server/internal/vault"
 )
 
 // Server holds everything the handlers need.
@@ -34,6 +36,18 @@ type Server struct {
 
 	// store keeps photo files (S3-compatible: Backblaze B2). nil = photos are off.
 	store storage.Store
+
+	// vault encrypts entry text before it reaches the database. nil = stored as plain text.
+	vault *vault.Keyring
+
+	// embedder turns text into vectors for semantic search. nil = search is off.
+	embedder *embed.Client
+
+	// embedWake nudges the embedding worker right after a save.
+	embedWake chan struct{}
+
+	// searchLimiter stops one account from flooding the embedding model.
+	searchLimiter *ipLimiter
 }
 
 // trustProxy should be true only when the server runs behind a load balancer
@@ -47,6 +61,10 @@ func NewServer(pool *pgxpool.Pool, logger *slog.Logger, tokens *auth.TokenManage
 
 		// 5 attempts in a burst, then one every 6 seconds (10 a minute).
 		authLimiter: newIPLimiter(rate.Every(6*time.Second), 5, trustProxy),
+
+		embedWake: make(chan struct{}, 1),
+		// Per account: 20 searches in a burst, then one a second.
+		searchLimiter: newIPLimiter(rate.Every(time.Second), 20, false),
 	}
 }
 
@@ -65,6 +83,18 @@ func (s *Server) WithMailer(m mail.Mailer) *Server {
 // WithStorage turns on photo uploads.
 func (s *Server) WithStorage(st storage.Store) *Server {
 	s.store = st
+	return s
+}
+
+// WithEncryption turns on encryption at rest for entry text.
+func (s *Server) WithEncryption(k *vault.Keyring) *Server {
+	s.vault = k
+	return s
+}
+
+// WithEmbedder turns on semantic search (GET /search and the embedding worker).
+func (s *Server) WithEmbedder(e *embed.Client) *Server {
+	s.embedder = e
 	return s
 }
 
@@ -98,6 +128,9 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /attachments/{id}/url", s.requireUser(s.handleAttachmentURL))
 	mux.HandleFunc("DELETE /attachments/{id}", s.requireUser(s.handleDeleteAttachment))
 	mux.HandleFunc("GET /attachments/pull", s.requireUser(s.handlePullAttachments))
+
+	// Semantic search: find entries by meaning, not exact words.
+	mux.HandleFunc("GET /search", s.requireUser(s.handleSearch))
 
 	// Journal entries.
 	mux.HandleFunc("POST /entries", s.requireUser(s.handleCreateEntry))

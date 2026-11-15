@@ -17,8 +17,10 @@ import (
 	"github.com/SushantPulipati05/journal-server/internal/auth"
 	"github.com/SushantPulipati05/journal-server/internal/config"
 	"github.com/SushantPulipati05/journal-server/internal/dbmigrate"
+	"github.com/SushantPulipati05/journal-server/internal/embed"
 	"github.com/SushantPulipati05/journal-server/internal/mail"
 	"github.com/SushantPulipati05/journal-server/internal/storage"
+	"github.com/SushantPulipati05/journal-server/internal/vault"
 )
 
 func main() {
@@ -104,6 +106,31 @@ func run() error {
 		logger.Info("photo storage enabled", "endpoint", cfg.S3Endpoint, "bucket", cfg.S3Bucket)
 	} else {
 		logger.Warn("S3_* settings missing: photos are disabled")
+	}
+
+	if cfg.EncryptionKey != "" {
+		masterKey, err := vault.ParseMasterKey(cfg.EncryptionKey)
+		if err != nil {
+			return err
+		}
+		keyring, err := vault.NewKeyring(pool, masterKey)
+		if err != nil {
+			return fmt.Errorf("encryption: %w", err)
+		}
+		server.WithEncryption(keyring)
+		logger.Info("entries are encrypted at rest")
+		// Older entries are still plain text: encrypt them in the background.
+		go server.EncryptExistingEntries(ctx)
+	} else {
+		logger.Warn("ENCRYPTION_MASTER_KEY not set: entries are stored unencrypted")
+	}
+
+	if cfg.EmbeddingURL != "" {
+		server.WithEmbedder(embed.NewOllama(cfg.EmbeddingURL, cfg.EmbeddingModel))
+		logger.Info("semantic search enabled", "url", cfg.EmbeddingURL, "model", cfg.EmbeddingModel)
+		go server.RunEmbedWorker(ctx)
+	} else {
+		logger.Warn("EMBEDDING_URL not set: semantic search is disabled")
 	}
 
 	srv := &http.Server{

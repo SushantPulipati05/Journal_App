@@ -79,6 +79,21 @@ data class PullResponse(
     @SerialName("has_more") val hasMore: Boolean,
 )
 
+/** One entry found by meaning (GET /search). */
+@Serializable
+data class SearchHitDto(
+    @SerialName("entry_id") val entryId: String,
+    val score: Float,
+    val snippet: String = "",
+)
+
+@Serializable
+data class SearchResponse(
+    val results: List<SearchHitDto>,
+    /** Entries the server hasn't finished preparing for search yet. */
+    val pending: Int = 0,
+)
+
 @Serializable
 internal data class ErrorDto(val error: String)
 

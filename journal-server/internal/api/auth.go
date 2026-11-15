@@ -288,5 +288,6 @@ func (s *Server) handleDeleteMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.removeFiles(userID, photos)
+	s.vault.Forget(userID) // the key itself was deleted with the account
 	w.WriteHeader(http.StatusNoContent)
 }

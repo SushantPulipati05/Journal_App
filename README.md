@@ -21,9 +21,13 @@ appears on your other devices. It works fully offline; sync catches up when the 
 - Autosave while typing, word count, adjustable text size and serif/sans fonts.
 
 **Browsing**
-- Journals list with search; on desktop, a **gallery** or **timeline** view with entries opening in a side sheet.
+- **Search by meaning:** "when was I stressed about placements" finds an entry that says "can't sleep, interviews next week", even with no words in common. Word search still runs on the device and works offline.
+- Journals list with word search; on desktop, a **gallery** or **timeline** view with entries opening in a side sheet.
 - Swipe to delete with **Undo**, and a **Trash** that keeps deleted entries for 30 days.
 - Skeleton loaders and smooth transitions throughout.
+
+**Privacy**
+- **Entries are encrypted at rest** on the server (AES-256-GCM, a separate key per user). A leaked database or backup is unreadable, and deleting an account destroys its key, so even old backups can't be read.
 
 **Accounts and sync**
 - Email + password or **Sign in with Google** (Android and desktop).
@@ -57,6 +61,7 @@ flowchart LR
     end
 
     PSync -- "upload / download<br/>directly with presigned URL" --> S3
+    API -- "private network" --> Ollama["Ollama<br/>EmbeddingGemma"]
     API -. "reset emails" .-> Mail["Resend"]
     API -. "verify ID token" .-> Google["Google Sign-In"]
 ```
@@ -67,6 +72,18 @@ flowchart LR
 - **Deletes are tombstones.** A deleted entry is kept as a "deleted" record, so the delete reaches every device.
 - **Conflicts are merged, not overwritten.** Each entry stores the last version both sides agreed on (the *base*). When local and server edits meet, a **three-way merge** combines them line by line, and the merged result is pushed back.
 - **Guards:** the server rejects timestamps more than 5 minutes in the future, so a device with a wrong clock can't "win" every conflict.
+
+### How encryption works (envelope encryption)
+- **Two layers of keys:** every user gets a random 256-bit **data key**. It encrypts their titles and bodies (AES-256-GCM). The data key is stored **wrapped**, i.e. encrypted with one **master key** that exists only in a Railway variable, never in the database.
+- **Tamper-proof and tied to its place:** each value gets a fresh random nonce and is bound to its entry ID and field. A ciphertext copied into another row, or edited, fails to decrypt.
+- **Invisible to the app:** the server encrypts on push and decrypts on pull, so the app is unchanged. Entries written before encryption was turned on are encrypted in the background at start-up.
+- **Crypto-shredding:** deleting an account deletes its data key, so every copy of its entries becomes unreadable, including old backups.
+- **Honest limits:** this protects the stored data, not against the server itself (it can decrypt). Photos rely on the storage provider's encryption at rest. End-to-end encryption is on the roadmap.
+
+### How search by meaning works
+- **Embeddings:** an open model (Google's **EmbeddingGemma**, served by **Ollama** as a private Railway service) turns text into a list of 768 numbers that captures its meaning. Similar meanings land close together.
+- **Indexing in the background:** saving an entry queues a job in the same transaction. A Go worker leases jobs (`FOR UPDATE SKIP LOCKED`, retries with exponential backoff), decrypts the entry, splits it into paragraph-sized chunks and embeds only the chunks whose keyed hash changed. Chunk text is never stored; only vectors and an HMAC.
+- **Searching:** the question is embedded, compared with every chunk of that user (dot product), and the best paragraph of each entry is decrypted as a snippet. The app shows these under "Similar in meaning", next to its own offline word matches.
 
 ### How photos work
 - **Inside the entry:** a photo is stored as a marker line, `{{photo:<uuid>|<width%>}}`. Its position syncs with the entry text.
@@ -82,7 +99,8 @@ flowchart LR
 |---|---|
 | **Backend** | Go 1.27, `net/http` (Go 1.22+ routing), PostgreSQL, **pgx** + **sqlc** (type-safe SQL), **goose** migrations |
 | **Auth** | bcrypt (cost 12), JWT access tokens (15 min) + refresh tokens (30 days), Google ID-token verification |
-| **Security** | Per-IP rate limiting on auth routes, constant-time login (no user enumeration), presigned storage URLs |
+| **Security** | AES-256-GCM envelope encryption at rest, per-IP rate limiting on auth routes, constant-time login (no user enumeration), presigned storage URLs |
+| **Search** | EmbeddingGemma via Ollama (self-hosted), background embedding worker on a Postgres job table, cosine similarity in Go |
 | **Storage** | S3-compatible bucket via **minio-go** |
 | **Email** | Resend (password-reset codes) |
 | **Client** | Kotlin Multiplatform, **Compose Multiplatform**, Koin (DI), Ktor (HTTP), AndroidX SQLite (bundled), WorkManager (background sync) |
@@ -103,6 +121,9 @@ Journal/
 │   ├── internal/auth          passwords, JWTs, Google token checks
 │   ├── internal/db            sqlc-generated queries
 │   ├── internal/storage       S3 presigned URLs
+│   ├── internal/vault         encryption at rest (envelope encryption, per-user keys)
+│   ├── internal/embed         chunking + the Ollama embedding client
+│   ├── ollama/                the embedding model's Railway service (Dockerfile)
 │   ├── migrations             SQL migrations (embedded in the binary)
 │   └── Dockerfile, railway.toml, docker-compose.yml
 ├── JournalApp/                Kotlin Compose Multiplatform client
@@ -122,7 +143,8 @@ Requirements: Go 1.27+, Docker.
 
 ```bash
 cd journal-server
-docker compose up -d            # Postgres on localhost:5433
+docker compose up -d            # Postgres on localhost:5433, Ollama on :11434
+docker compose exec ollama ollama pull embeddinggemma   # once, for search
 
 # Windows PowerShell: load dev variables
 . .\dev.ps1
@@ -149,6 +171,8 @@ go test -race ./...             # tests (starts a throwaway Postgres container)
 | `GOOGLE_CLIENT_ID` | Comma-separated Google OAuth client IDs accepted for sign-in |
 | `RESEND_API_KEY` | Sends password-reset emails |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Photo storage |
+| `ENCRYPTION_MASTER_KEY` | Base64 of 32 random bytes (`openssl rand -base64 32`). Set = entries encrypted at rest. **Back it up: losing it loses every entry.** |
+| `EMBEDDING_URL`, `EMBEDDING_MODEL` | Ollama address and model (default `embeddinggemma`). Set = search by meaning on |
 
 ### App
 Requirements: Android Studio or IntelliJ IDEA, JDK 17+.
@@ -178,6 +202,7 @@ Signing keys (`keystore.properties`, `*.jks`) and `google-desktop.properties` ar
 | `POST` | `/attachments`, `/attachments/{id}/complete` | Get an upload URL, confirm the upload |
 | `GET` | `/attachments/{id}/url`, `/attachments/pull` | Download URL, photo changes since a cursor |
 | `DELETE` | `/attachments/{id}` | Remove a photo |
+| `GET` | `/search?q=` | Entries closest in meaning, with the matching paragraph |
 | `GET` | `/healthz` | Health check (used by Railway) |
 
 ---
@@ -185,6 +210,7 @@ Signing keys (`keystore.properties`, `*.jks`) and `google-desktop.properties` ar
 ## Roadmap
 - **Better search:** full-text search (SQLite FTS5) with highlighted snippets.
 - **Calendar view,** "On this day" and life *chapters* (named date ranges).
-- **Semantic search with embeddings:** find entries by meaning, a 3D map of related entries, automatic themes over time.
+- **More from the embeddings:** a 3D map of related entries, automatic themes over time, "you've written about this before".
+- **End-to-end encryption** with on-device search.
 - **Mood and reflection:** gentle monthly trends.
 - **Releases:** iOS and macOS builds, then the Play Store.

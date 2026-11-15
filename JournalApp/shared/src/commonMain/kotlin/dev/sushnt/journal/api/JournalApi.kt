@@ -138,6 +138,17 @@ class JournalApi(
             }
         }) { it.body<PullResponse>() }
 
+    // ---------- search ----------
+
+    /** Entries whose meaning is closest to [query] (the server compares embeddings). */
+    suspend fun search(query: String, limit: Int = 20): ApiResult<SearchResponse> =
+        call(authed = true, request = {
+            authed.get("$baseUrl/search") {
+                parameter("q", query)
+                parameter("limit", limit)
+            }
+        }) { it.body<SearchResponse>() }
+
     // ---------- photos ----------
 
     /** Step 1 of an upload: tell the server about the photo and get a link to upload the file to. */

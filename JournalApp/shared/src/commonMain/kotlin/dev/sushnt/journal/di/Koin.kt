@@ -47,7 +47,7 @@ private fun appModule(config: PlatformConfig) = module {
     single { SessionManager(get(), get(), get(), get(), get(), photos = get()) }
 
     viewModel { AuthViewModel(get()) }
-    viewModel { EntriesViewModel(get(), get(), get()) }
+    viewModel { EntriesViewModel(get(), get(), get(), get()) }
     viewModel { WriteViewModel(get(), get(), get()) }
     viewModel { SettingsViewModel(get(), get(), get(), get()) }
 }
