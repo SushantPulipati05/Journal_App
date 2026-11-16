@@ -89,3 +89,9 @@ expect fun writeFileBytes(path: String, bytes: ByteArray)
 expect fun readFileBytes(path: String): ByteArray?
 expect fun deleteFileAt(path: String)
 expect fun makeDirs(path: String)
+
+private val FormattingPrefix = Regex("""^(#{1,2} |[-*] \[[ xX]\] |[-*] |\d{1,3}\. )""", RegexOption.MULTILINE)
+
+/** Entry text as search sees it: no photo lines, no formatting marks ("- [ ] ", "**"). */
+fun searchableText(body: String): String =
+    body.withoutPhotos().replace(FormattingPrefix, "").replace("**", "")

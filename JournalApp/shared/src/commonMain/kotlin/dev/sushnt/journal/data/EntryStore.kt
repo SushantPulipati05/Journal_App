@@ -51,6 +51,15 @@ data class TrashedEntry(
     val deletedAt: Long,
 )
 
+/**
+ * One result of a word search: the entry, and the bit of text where the words were found.
+ * In [snippet] the matching words sit between [SnippetStart] and [SnippetEnd].
+ */
+data class SearchHit(val entry: Entry, val snippet: String)
+
+const val SnippetStart = '\u0002'
+const val SnippetEnd = '\u0003'
+
 /** What happened when a change from the server was applied. */
 enum class ApplyResult { Stored, KeptLocal, Merged }
 
@@ -86,6 +95,28 @@ class EntryStore(
     }
 
     suspend fun get(id: String): Entry? = locked { getUnlocked(id) }
+
+    /**
+     * Word search with SQLite FTS5: an index of every word, so it takes milliseconds even
+     * with thousands of entries. Best matches first (bm25; words in the title count 5x),
+     * each with a snippet of where the words were found. Every word must appear; the last
+     * one may be unfinished ("interv" finds "interview").
+     */
+    suspend fun search(text: String, limit: Int = 100): List<SearchHit> = locked {
+        val match = ftsQuery(text) ?: return@locked emptyList()
+        query(
+            """SELECT ${COLUMNS.split(", ").joinToString { "e.$it" }},
+                      snippet(entries_fts, 2, '$SnippetStart', '$SnippetEnd', '…', 14)
+               FROM entries_fts JOIN entries e ON e.id = entries_fts.id
+               WHERE entries_fts MATCH ? AND e.deleted_at IS NULL
+               ORDER BY bm25(entries_fts, 0.0, 5.0, 1.0)
+               LIMIT ?""",
+            {
+                it.bindText(1, match)
+                it.bindLong(2, limit.toLong())
+            },
+        ) { SearchHit(it.toEntry(), it.getText(10)) }
+    }
 
     suspend fun create(title: String, body: String): Entry = locked {
         val t = now()
@@ -254,6 +285,7 @@ class EntryStore(
     /** Wipes everything. Used on sign-out so the next account never sees these entries. */
     suspend fun clear() = locked {
         run("DELETE FROM entries") {}
+        run("DELETE FROM entries_fts") {}
         run("DELETE FROM meta") {}
         run("DELETE FROM trash") {}
         bump()
@@ -302,7 +334,18 @@ class EntryStore(
             ) {}
             run("PRAGMA user_version = 2") {}
         }
-        // Future schema changes go here as: if (version < 3) { ... PRAGMA user_version = 3 }
+        if (version < 3) {
+            // v3: a full-text index (FTS5) for fast word search. It holds the searchable text
+            // (no photo lines or formatting marks) and is kept up to date in upsert().
+            run(
+                """CREATE VIRTUAL TABLE IF NOT EXISTS entries_fts USING fts5(
+                    id UNINDEXED, title, body, tokenize = 'unicode61 remove_diacritics 2'
+                )""",
+            ) {}
+            for (e in entries("SELECT $COLUMNS FROM entries WHERE deleted_at IS NULL")) index(e)
+            run("PRAGMA user_version = 3") {}
+        }
+        // Future schema changes go here as: if (version < 4) { ... PRAGMA user_version = 4 }
     }
 
     private fun bump() {
@@ -328,6 +371,18 @@ class EntryStore(
             it.bindLong(8, e.version)
             if (e.baseTitle == null) it.bindNull(9) else it.bindText(9, e.baseTitle)
             if (e.baseBody == null) it.bindNull(10) else it.bindText(10, e.baseBody)
+        }
+        index(e)
+    }
+
+    /** Keeps the search index in step with one entry (deleted entries leave it). */
+    private fun index(e: Entry) {
+        run("DELETE FROM entries_fts WHERE id = ?") { it.bindText(1, e.id) }
+        if (e.deletedAt != null || (e.title.isBlank() && e.body.isBlank())) return
+        run("INSERT INTO entries_fts (id, title, body) VALUES (?, ?, ?)") {
+            it.bindText(1, e.id)
+            it.bindText(2, e.title)
+            it.bindText(3, searchableText(e.body))
         }
     }
 
@@ -384,6 +439,19 @@ class EntryStore(
         private const val COLUMNS = "id, title, body, created_at, updated_at, deleted_at, dirty, version, base_title, base_body"
         private const val TRASH_DAYS = 30L
         private const val DAY_MS = 24L * 60 * 60 * 1000
+
+        private val WordRegex = Regex("""[\p{L}\p{N}]+""")
+
+        /**
+         * Turns what you typed into an FTS5 query: every word must appear, quoted (so
+         * characters like - or : can't break the query), and the last word also matches
+         * longer words ("interv" → interview). null when there's nothing to search for.
+         */
+        internal fun ftsQuery(typed: String): String? {
+            val words = WordRegex.findAll(typed).map { it.value }.toList()
+            if (words.isEmpty()) return null
+            return words.mapIndexed { i, w -> if (i == words.lastIndex) "\"$w\"*" else "\"$w\"" }.joinToString(" ")
+        }
 
         /** One block of text, first line = title (same rule as the Write page). */
         private fun joinText(title: String, body: String) = if (body.isEmpty()) title else "$title\n$body"

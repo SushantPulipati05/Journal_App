@@ -11,9 +11,9 @@ import dev.sushnt.journal.api.SearchHitDto
 import dev.sushnt.journal.data.Entry
 import dev.sushnt.journal.data.EntryStore
 import dev.sushnt.journal.data.PhotoStore
+import dev.sushnt.journal.data.SearchHit
 import dev.sushnt.journal.data.TrashedEntry
 import dev.sushnt.journal.data.photoIds
-import dev.sushnt.journal.data.withoutPhotos
 import dev.sushnt.journal.data.SyncController
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
@@ -72,15 +73,32 @@ class EntriesViewModel(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
-    /** What the list shows: matching entries, grouped by the day they were written. */
-    val sections: StateFlow<List<DaySection>> = combine(entries, _query) { list, q ->
-        val words = q.trim().lowercase().split(' ').filter { it.isNotEmpty() }
-        val matching = if (words.isEmpty()) list else list.filter { e ->
-            val text = (e.title + " " + e.body.withoutPhotos()).lowercase()
-            words.all { it in text }
+    /**
+     * Word search: the device's full-text index (SQLite FTS5) answers in milliseconds,
+     * best matches first. Runs again after every change to the entries. null = no search.
+     */
+    private val wordHits: Flow<List<SearchHit>?> =
+        combine(_query.map { it.trim() }.distinctUntilChanged(), store.revision) { q, _ -> q }
+            .mapLatest { q -> if (q.isEmpty()) null else store.search(q) }
+
+    /** Where the search words appear in each matching entry (entry id -> snippet). */
+    val snippets: StateFlow<Map<String, String>> = wordHits
+        .map { hits -> hits.orEmpty().associate { it.entry.id to it.snippet } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * What the list shows: every entry grouped by the day it was written or, while
+     * searching, the matches with the best one first.
+     */
+    val sections: StateFlow<List<DaySection>> = combine(entries, wordHits) { list, hits ->
+        if (hits != null) {
+            // Only entries that are still shown (not one waiting to be deleted).
+            val shown = list.mapTo(HashSet<String>()) { it.id }
+            val matches = hits.map { it.entry }.filter { it.id in shown }
+            return@combine if (matches.isEmpty()) emptyList() else listOf(DaySection("Best matches", matches))
         }
         val now = nowMillis()
-        matching
+        list
             .groupBy { localDate(it.createdAt) }
             .entries
             .sortedByDescending { it.key }

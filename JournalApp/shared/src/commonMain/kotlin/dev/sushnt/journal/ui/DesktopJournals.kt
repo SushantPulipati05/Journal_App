@@ -113,6 +113,7 @@ fun DesktopJournals(
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
     val query by vm.query.collectAsState()
+    val snippets by vm.snippets.collectAsState()
     val meaning by vm.meaning.collectAsState()
     val streak by vm.streak.collectAsState()
     val pendingDelete by vm.pendingDelete.collectAsState()
@@ -178,7 +179,7 @@ fun DesktopJournals(
                         label = "journals view",
                     ) { view ->
                         when (view) {
-                            JournalsView.Gallery -> Gallery(shown, prefs, selectedId, onOpen, bottomPadding)
+                            JournalsView.Gallery -> Gallery(shown, prefs, selectedId, onOpen, bottomPadding, snippets)
                             JournalsView.Timeline -> Timeline(shown, all, prefs, onOpen, bottomPadding)
                         }
                     }
@@ -321,7 +322,15 @@ private fun ViewSwitchButton(label: String, glyph: Glyph, isSelected: Boolean, o
 
 /** Cards in a masonry grid, grouped by month. Short entries become quotes. */
 @Composable
-private fun Gallery(entries: List<Entry>, prefs: AppPrefs, selectedId: String?, onOpen: (Entry) -> Unit, bottomPadding: Dp) {
+private fun Gallery(
+    entries: List<Entry>,
+    prefs: AppPrefs,
+    selectedId: String?,
+    onOpen: (Entry) -> Unit,
+    bottomPadding: Dp,
+    /** While searching: where the words were found in each entry. */
+    snippets: Map<String, String> = emptyMap(),
+) {
     val months = remember(entries) { entries.groupBy { monthOf(it) } } // keeps newest-first order
     val now = remember { localDate(nowMillis()) }
     LazyVerticalStaggeredGrid(
@@ -337,7 +346,7 @@ private fun Gallery(entries: List<Entry>, prefs: AppPrefs, selectedId: String?, 
                 MonthHeader(monthLabel(month, now), monthEntries.size, Modifier.animateItem())
             }
             items(monthEntries, key = { it.id }) { entry ->
-                GalleryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) }, modifier = Modifier.animateItem())
+                GalleryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) }, modifier = Modifier.animateItem(), snippet = snippets[entry.id])
             }
         }
     }
@@ -355,7 +364,7 @@ private fun MonthHeader(label: String, count: Int, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, snippet: String? = null) {
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val lift by animateDpAsState(if (hovered) (-2).dp else 0.dp, Motion.gentleSpring(), label = "card lift")
@@ -373,7 +382,8 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
     val preview = remember(entry.body) { entry.body.withoutPhotos().withoutMarkdown().trim() }
     val photoList = remember(entry.body) { photoIds(entry.body) }
     val words = remember(text) { wordCount(text) }
-    val asQuote = words in 1..25 && photoList.isEmpty() // a one-liner reads better as a quote than as a title
+    // A one-liner reads better as a quote than as a title (but not while showing a search snippet).
+    val asQuote = words in 1..25 && photoList.isEmpty() && snippet == null
 
     Column(
         modifier
@@ -440,7 +450,17 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            if (preview.isNotBlank()) {
+            if (snippet != null && snippet.isNotBlank()) {
+                Text(
+                    remember(snippet) { highlightedSnippet(snippet) },
+                    color = JournalColors.Preview,
+                    fontFamily = writingFont(prefs.serifFont),
+                    fontSize = 15.sp,
+                    lineHeight = 23.sp,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            } else if (preview.isNotBlank()) {
                 Text(
                     preview,
                     color = JournalColors.Preview,

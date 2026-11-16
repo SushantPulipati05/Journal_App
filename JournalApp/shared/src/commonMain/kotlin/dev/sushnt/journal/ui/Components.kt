@@ -1,5 +1,10 @@
 package dev.sushnt.journal.ui
 
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import dev.sushnt.journal.data.SnippetStart
+import dev.sushnt.journal.data.SnippetEnd
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -110,6 +115,24 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 val CardShape = RoundedCornerShape(18.dp)
+
+/** A search snippet with the matching words highlighted (they arrive between SnippetStart and SnippetEnd). */
+fun highlightedSnippet(snippet: String): AnnotatedString = buildAnnotatedString {
+    var open = 0
+    for (c in snippet) {
+        when (c) {
+            SnippetStart -> {
+                pushStyle(SpanStyle(color = JournalColors.TextStrong, fontWeight = FontWeight.SemiBold, background = JournalColors.AccentContainer))
+                open++
+            }
+            SnippetEnd -> if (open > 0) {
+                pop()
+                open--
+            }
+            else -> append(if (c == '\n') ' ' else c)
+        }
+    }
+}
 
 /** The rounded, bordered card surface used across the app. */
 fun Modifier.card(): Modifier = this

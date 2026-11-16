@@ -91,6 +91,7 @@ fun JournalsScreen(
     val all by vm.entries.collectAsState()
     val sections by vm.sections.collectAsState()
     val query by vm.query.collectAsState()
+    val snippets by vm.snippets.collectAsState()
     val meaning by vm.meaning.collectAsState()
     val streak by vm.streak.collectAsState()
     val syncing by vm.syncing.collectAsState()
@@ -174,7 +175,7 @@ fun JournalsScreen(
                 items(section.entries, key = { it.id }) { entry ->
                     // animateItem(): cards fade in, fade out, and glide into place when the list changes.
                     SwipeToDelete(Modifier.animateItem(), onDelete = { vm.deleteWithUndo(entry) }) {
-                        EntryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) })
+                        EntryCard(entry, prefs, selected = entry.id == selectedId, onClick = { onOpen(entry) }, snippet = snippets[entry.id])
                     }
                 }
             }
@@ -300,7 +301,7 @@ private fun StreakCard(days: Int) {
 }
 
 @Composable
-private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick: () -> Unit) {
+private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick: () -> Unit, snippet: String? = null) {
     val source = remember { MutableInteractionSource() }
     Column(
         Modifier
@@ -337,7 +338,17 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
         )
         val preview = remember(entry.body) { entry.body.withoutPhotos().withoutMarkdown().trim() }
         val photoList = remember(entry.body) { photoIds(entry.body) }
-        if (preview.isNotBlank()) {
+        if (snippet != null && snippet.isNotBlank()) {
+            // Searching: show where the words were found, highlighted.
+            Text(
+                remember(snippet) { highlightedSnippet(snippet) },
+                color = JournalColors.Preview,
+                fontSize = 14.sp,
+                lineHeight = 21.sp,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else if (preview.isNotBlank()) {
             Text(
                 preview,
                 color = JournalColors.Preview,
