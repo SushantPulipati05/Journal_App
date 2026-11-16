@@ -369,8 +369,8 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
         label = "card border",
     )
     val shape = RoundedCornerShape(16.dp)
-    val text = remember(entry.title, entry.body) { joinEntryText(entry.title, entry.body).withoutPhotos().trim() }
-    val preview = remember(entry.body) { entry.body.withoutPhotos().trim() }
+    val text = remember(entry.title, entry.body) { joinEntryText(entry.title, entry.body).withoutPhotos().withoutMarkdown().trim() }
+    val preview = remember(entry.body) { entry.body.withoutPhotos().withoutMarkdown().trim() }
     val photoList = remember(entry.body) { photoIds(entry.body) }
     val words = remember(text) { wordCount(text) }
     val asQuote = words in 1..25 && photoList.isEmpty() // a one-liner reads better as a quote than as a title

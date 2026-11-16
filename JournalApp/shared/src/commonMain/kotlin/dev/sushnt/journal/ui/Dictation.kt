@@ -65,6 +65,54 @@ internal fun cleanTranscript(raw: String): String {
     return t
 }
 
+/** Words that start a question, for guessing "?" instead of "." (English). */
+private val QuestionStarts = setOf(
+    "do", "does", "did", "is", "are", "was", "were", "am", "can", "could", "would", "should", "will",
+    "shall", "may", "might", "have", "has", "had", "what", "why", "how", "when", "where", "who", "whom",
+    "whose", "which", "isn't", "aren't", "don't", "doesn't", "didn't", "can't", "won't", "shouldn't",
+)
+
+/**
+ * Punctuation for a finished sentence. Older phones' speech recognition writes no
+ * punctuation at all, so:
+ *  - spoken commands work in English: "comma", "full stop", "question mark",
+ *    "exclamation mark", "new line" / "new paragraph";
+ *  - a pause ends a sentence: "." is added (or "?" when it starts like a question,
+ *    "।" in Hindi and Marathi), unless the phone already punctuated it;
+ *  - each sentence starts with a capital letter.
+ */
+internal fun punctuate(raw: String, language: String): String {
+    var t = raw.trim()
+    if (t.isEmpty()) return t
+    val english = language.isEmpty() || language.startsWith("en")
+    val phonePunctuates = t.any { it in ".?!," }
+    if (english) {
+        t = t.replace(Regex("""(?i)\s*\b(new paragraph|new line|next line)\b\s*"""), "\n")
+        t = t.replace(Regex("""(?i)\s*\bcomma\b"""), ",")
+        t = t.replace(Regex("""(?i)\s*\bfull stop\b"""), ".")
+        t = t.replace(Regex("""(?i)\s*\bquestion mark\b"""), "?")
+        t = t.replace(Regex("""(?i)\s*\bexclamation (mark|point)\b"""), "!")
+        t = t.replace(Regex("""([,.?!])(?=\p{L})"""), "$1 ") // "word.next" -> "word. next" (not "3.5")
+    }
+    if (!phonePunctuates) {
+        // "…went home new line" ends that sentence too.
+        t = t.replace(Regex("""(?<=[\p{L}\p{N}])\n"""), ".\n")
+        val last = t.lastOrNull()
+        if (last != null && last !in ".?!,\n") {
+            val sentence = t.substringAfterLast('\n').split(Regex("""[.?!]\s""")).last()
+            val firstWord = sentence.trim().substringBefore(' ').lowercase()
+            t += when {
+                english && firstWord in QuestionStarts -> "?"
+                language.startsWith("hi") || language.startsWith("mr") -> "।"
+                else -> "."
+            }
+        }
+    }
+    // Capital letters at the start of each sentence.
+    t = t.replaceFirstChar { it.uppercaseChar() }
+    t = Regex("""([.?!]\s+|\n)(\p{Ll})""").replace(t) { it.groupValues[1] + it.groupValues[2].uppercase() }
+    return t
+}
 
 /** The mic button: tap to talk, tap again to stop. Pulses with your voice while listening. */
 @Composable

@@ -46,6 +46,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -65,6 +66,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -175,7 +177,14 @@ fun EntryEditor(
     var selectedPhoto by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
     val latestText by rememberUpdatedState(text)
-    val titleLook = remember(titleSize) { FirstLineAsTitle(titleSize) }
+    // Draws the title line and the formatting (headings, lists, checkboxes, bold...).
+    val titleLook = remember(titleSize, textStyle.fontSize) { MarkdownLook(titleSize, textStyle.fontSize) }
+    val bodyLook = remember(textStyle.fontSize) { MarkdownLook(null, textStyle.fontSize) }
+    // Where each text field put its lines, to place the formatting menus next to the text.
+    // A state map, so a menu appears as soon as the text it belongs to has been laid out.
+    val layouts = remember { mutableStateMapOf<Long, TextLayoutResult>() }
+    // An arrow key moved the cursor (not a tap), so landing on a checkbox mustn't tick it.
+    val movedByKey = remember { booleanArrayOf(false) }
 
     // Texts we sent up that the screen may still echo back a moment later. Those must
     // not rebuild the blocks (that would undo the newest keystrokes).
@@ -234,6 +243,14 @@ fun EntryEditor(
         }
     }
 
+    /** Replaces one text block's text and selection (formatting menus, shortcuts). */
+    fun applyEdit(key: Long, edit: TextEdit) {
+        val i = blocks.indexOfFirst { it.key == key }
+        if (i < 0) return
+        val value = TextFieldValue(edit.text, TextRange(edit.selStart, edit.selEnd))
+        publish(blocks.toMutableList().also { it[i] = Block.Text(key, value) })
+    }
+
     fun jumpToTextBefore(key: Long) {
         val i = blocks.indexOfFirst { it.key == key }
         val previous = (0 until i).reversed().map { blocks[it] }.firstOrNull { it is Block.Text } as? Block.Text ?: return
@@ -277,7 +294,7 @@ fun EntryEditor(
         val start = spot.start.coerceIn(0, old.length)
         val end = (start + spot.length).coerceIn(start, old.length)
         val needsSpace = start > 0 && !old[start - 1].isWhitespace()
-        val words = chunk.trim()
+        val words = chunk.trim(' ', '\t') // keep a spoken "new line"
         val lead = when {
             spot.newLineFirst -> "\n"
             needsSpace -> " "
@@ -396,11 +413,37 @@ fun EntryEditor(
                     is Block.Text -> {
                         val requester = requesters.getOrPut(block.key) { FocusRequester() }
                         val last = index == blocks.lastIndex
+                        val firstIsTitle = index == 0
+                        Box {
                         BasicTextField(
                             value = block.value,
-                            onValueChange = { v ->
+                            onValueChange = { typed ->
                                 val i = blocks.indexOfFirst { it.key == block.key }
+                                val old = (blocks.getOrNull(i) as? Block.Text)?.value ?: block.value
+                                var v = typed
+                                if (typed.text != old.text && typed.selection.collapsed) {
+                                    // Type-to-format: Enter continues a list, "[] " becomes a checkbox,
+                                    // Enter in the "/" menu picks its first command.
+                                    val rule = slashOnEnter(old.text, typed.text, typed.selection.start, firstIsTitle)
+                                        ?: applyInputRules(old.text, typed.text, typed.selection.start, firstIsTitle)
+                                    if (rule != null) v = TextFieldValue(rule.text, TextRange(rule.selStart, rule.selEnd))
+                                } else if (typed.text == old.text && typed.selection.collapsed && typed.selection != old.selection && !movedByKey[0]) {
+                                    // A tap on a checkbox ticks it.
+                                    val pos = typed.selection.start
+                                    val start = lineStart(typed.text, pos)
+                                    if (pos - start in 0..5 && !(firstIsTitle && start == 0)) {
+                                        toggleCheckbox(typed.text, pos)?.let { v = TextFieldValue(it.text, TextRange(lineEnd(it.text, pos))) }
+                                    }
+                                }
+                                movedByKey[0] = false
                                 if (i >= 0) publish(blocks.toMutableList().also { it[i] = Block.Text(block.key, v) })
+                            },
+                            onTextLayout = { result ->
+                                val previous = layouts[block.key]
+                                // Only when something really changed, or this would loop forever.
+                                if (previous == null || previous.layoutInput != result.layoutInput || previous.size != result.size) {
+                                    layouts[block.key] = result
+                                }
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -415,8 +458,14 @@ fun EntryEditor(
                                 // Backspace at the very start of the text below a photo: hop back to
                                 // the end of the text above the photo (the photo itself stays; use ×).
                                 .onPreviewKeyEvent { event ->
-                                    val atStart = block.value.selection.collapsed && block.value.selection.start == 0
-                                    if (index > 0 && atStart && event.type == KeyEventType.KeyDown && event.key == Key.Backspace) {
+                                    val sel = block.value.selection
+                                    val atStart = sel.collapsed && sel.start == 0
+                                    if (event.type == KeyEventType.KeyDown && event.key in CursorKeys) movedByKey[0] = true
+                                    val shortcut = formattingShortcut(event, block.value.text, sel.start, sel.end, firstIsTitle)
+                                    if (shortcut != null) {
+                                        applyEdit(block.key, shortcut)
+                                        true
+                                    } else if (index > 0 && atStart && event.type == KeyEventType.KeyDown && event.key == Key.Backspace) {
                                         jumpToTextBefore(block.key)
                                         true
                                     } else {
@@ -426,7 +475,7 @@ fun EntryEditor(
                                 .semantics { contentDescription = if (index == 0) "Journal entry. The first line is the title." else "Text after a photo" },
                             textStyle = textStyle,
                             cursorBrush = SolidColor(JournalColors.Accent),
-                            visualTransformation = if (index == 0) titleLook else VisualTransformation.None,
+                            visualTransformation = if (index == 0) titleLook else bodyLook,
                             decorationBox = { field ->
                                 Box {
                                     if (index == 0 && isEmpty && placeholder != null) {
@@ -436,6 +485,30 @@ fun EntryEditor(
                                 }
                             },
                         )
+                        // Formatting menus, only for the text being edited.
+                        val layout = layouts[block.key]
+                        val sel = block.value.selection
+                        if (focusedKey == block.key && layout != null && sel.max <= layout.layoutInput.text.length) {
+                            val slash = if (sel.collapsed) slashMatches(block.value.text, sel.start, firstIsTitle) else null
+                            when {
+                                slash != null -> SlashMenu(layout.getCursorRect(sel.start), slash) { command ->
+                                    applyEdit(block.key, applySlash(block.value.text, sel.start, command))
+                                }
+                                !sel.collapsed -> {
+                                    val text = block.value.text
+                                    fun lines(kind: LineKind) = applyEdit(block.key, setLineKind(text, sel.min, sel.max, kind, firstIsTitle))
+                                    SelectionPill(
+                                        anchor = layout.getCursorRect(sel.max),
+                                        onBold = { applyEdit(block.key, toggleWrap(text, sel.min, sel.max, "**")) },
+                                        onItalic = { applyEdit(block.key, toggleWrap(text, sel.min, sel.max, "*")) },
+                                        onHeading = { lines(LineKind.Heading1) },
+                                        onBullet = { lines(LineKind.Bullet) },
+                                        onChecklist = { lines(LineKind.Todo) },
+                                    )
+                                }
+                            }
+                        }
+                        }
                     }
                     is Block.Photo -> PhotoInEntry(
                         id = block.id,
@@ -657,7 +730,7 @@ fun EntryBodyView(body: String, style: TextStyle, modifier: Modifier = Modifier)
     Column(modifier) {
         for (part in splitParts(body)) {
             when (part) {
-                is EntryPart.Text -> if (part.text.isNotBlank()) Text(part.text.trim('\n'), style = style)
+                is EntryPart.Text -> if (part.text.isNotBlank()) Text(markdownAnnotated(part.text.trim('\n'), style.fontSize), style = style)
                 is EntryPart.Photo -> PhotoView(
                     part.id,
                     modifier = Modifier.padding(vertical = 14.dp),
@@ -705,3 +778,8 @@ class EditorHandle {
         onEnd?.invoke()
     }
 }
+
+/** Keys that move the cursor without typing. */
+private val CursorKeys = setOf(
+    Key.DirectionLeft, Key.DirectionRight, Key.DirectionUp, Key.DirectionDown, Key.MoveHome, Key.MoveEnd, Key.PageUp, Key.PageDown,
+)

@@ -335,7 +335,7 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        val preview = remember(entry.body) { entry.body.withoutPhotos().trim() }
+        val preview = remember(entry.body) { entry.body.withoutPhotos().withoutMarkdown().trim() }
         val photoList = remember(entry.body) { photoIds(entry.body) }
         if (preview.isNotBlank()) {
             Text(

@@ -192,7 +192,7 @@ fun WriteScreen(
                     onTextChange = vm::onTextChange,
                     textStyle = writingStyle,
                     titleSize = (bodySize * 1.3f).sp,
-                    placeholder = "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…",
+                    placeholder = "What's on your mind today? Note down your thoughts, a plan for the day, or a quiet reflection…\n\nTip: type / for headings, lists and checklists.",
                     addPhotoSignal = addPhoto,
                     handle = editorHandle,
                     focusOnStart = true,

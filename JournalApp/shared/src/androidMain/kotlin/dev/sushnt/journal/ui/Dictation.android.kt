@@ -88,6 +88,14 @@ private class AndroidDictation(
      */
     private var segmented = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
 
+    /**
+     * Android 13+: Google's on-device recognizer (the one behind Live Caption and the
+     * Recorder app). Unlike the default one it really adds punctuation and capitals, and it
+     * keeps listening across pauses. Falls back to the default one if it can't be used.
+     */
+    private var onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+
     /** Anything recognised since the mic was turned on. */
     private var heardAnything = false
 
@@ -140,7 +148,13 @@ private class AndroidDictation(
 
     private fun listenAgain() {
         if (!listening) return
-        val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also {
+        val r = recognizer ?: (
+            if (onDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(context)
+            }
+        ).also {
             it.setRecognitionListener(this)
             recognizer = it
         }
@@ -175,7 +189,7 @@ private class AndroidDictation(
     }
 
     private fun commitPending() {
-        if (pending.isNotBlank()) onText(cleanTranscript(pending), true)
+        if (pending.isNotBlank()) onText(punctuate(cleanTranscript(pending), language), true)
         pending = ""
     }
 
@@ -210,7 +224,7 @@ private class AndroidDictation(
         val words = results?.best().orEmpty()
         pending = ""
         if (listening) listenAgain() // restart first, so the gap where words get lost is tiny
-        if (words.isNotBlank()) onText(cleanTranscript(words), true)
+        if (words.isNotBlank()) onText(punctuate(cleanTranscript(words), language), true)
         if (!listening) finish()
     }
 
@@ -220,7 +234,7 @@ private class AndroidDictation(
         pending = ""
         if (words.isNotBlank()) {
             quietRestarts = 0
-            onText(cleanTranscript(words), true)
+            onText(punctuate(cleanTranscript(words), language), true)
         }
     }
 
@@ -251,11 +265,24 @@ private class AndroidDictation(
                 onError("Allow the microphone in the app's settings to dictate.")
             SpeechRecognizer.ERROR_NETWORK, SpeechRecognizer.ERROR_NETWORK_TIMEOUT, SpeechRecognizer.ERROR_SERVER ->
                 if (listening) onError("No internet. Download the offline speech pack for your language in the phone's settings.")
-            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE ->
+            // The on-device recognizer hasn't got this language yet: ask the phone to download
+            // it (for next time) and carry on with the default recognizer now.
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED, SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> if (onDevice && listening) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    runCatching { recognizer?.triggerModelDownload(intent()) }
+                }
+                switchToDefaultRecognizer()
+                onError("Downloading the speech pack for punctuation. Until then, dictation works without it.")
+                return
+            } else {
                 onError("This language isn't available for dictation on your phone.")
+            }
             // Anything else right at the start: the phone's speech service may not support the
             // long Android 13 session. Try once more the classic way before giving up.
-            else -> if (listening && segmented && !heardAnything) {
+            else -> if (listening && onDevice && !heardAnything) {
+                switchToDefaultRecognizer()
+                return
+            } else if (listening && segmented && !heardAnything) {
                 segmented = false
                 recognizer?.destroy()
                 recognizer = null
@@ -265,6 +292,14 @@ private class AndroidDictation(
         }
         listening = false
         finish()
+    }
+
+    /** Stop using the on-device recognizer for this session and listen with the default one. */
+    private fun switchToDefaultRecognizer() {
+        onDevice = false
+        recognizer?.destroy()
+        recognizer = null
+        main.postDelayed({ listenAgain() }, 300)
     }
 
     override fun onEndOfSpeech() {}

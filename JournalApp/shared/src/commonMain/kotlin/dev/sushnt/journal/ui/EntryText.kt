@@ -26,7 +26,7 @@ fun joinEntryText(title: String, body: String): String = when {
     else -> "$title\n$body"
 }
 
-fun wordCount(text: String): Int = text.withoutPhotos().split(Regex("\\s+")).count { it.isNotBlank() }
+fun wordCount(text: String): Int = text.withoutPhotos().withoutMarkdown().split(Regex("\\s+")).count { it.isNotBlank() }
 
 /** About 200 words a minute, never less than 1. */
 fun readMinutes(words: Int): Int = maxOf(1, (words + 199) / 200)

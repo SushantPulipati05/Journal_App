@@ -113,7 +113,7 @@ fun TrashScreen(onBack: () -> Unit, vm: EntriesViewModel = koinViewModel()) {
 @Composable
 private fun TrashCard(item: TrashedEntry, onRestore: () -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
     val daysLeft = (TRASH_DAYS - ((nowMillis() - item.deletedAt) / (24L * 60 * 60 * 1000)).toInt()).coerceAtLeast(0)
-    val preview = remember(item.body) { item.body.withoutPhotos().trim() }
+    val preview = remember(item.body) { item.body.withoutPhotos().withoutMarkdown().trim() }
     Column(modifier.fillMaxWidth().card().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             "${dayHeader(localDate(item.createdAt))} · deleted ${relativeLabel(item.deletedAt)}",

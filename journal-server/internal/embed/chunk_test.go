@@ -63,3 +63,11 @@ func TestSnippet(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestChunksDropMarkdown(t *testing.T) {
+	got := Chunks("t", "# Plans\n- [ ] buy **milk**\n- [x] call mom\n1. sleep *early*")
+	want := "Plans\nbuy milk\ncall mom\nsleep early"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("got %q", got)
+	}
+}

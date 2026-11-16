@@ -18,6 +18,18 @@ const (
 
 var photoLine = regexp.MustCompile(`\{\{photo:[^}]*\}\}`)
 
+// The app stores formatting as Markdown. Its markers say nothing about meaning, and
+// they'd show up in search snippets, so they're removed first.
+var (
+	linePrefix = regexp.MustCompile(`^(#{1,2} |[-*] \[[ xX]\] |[-*] |\d{1,3}\. )`)
+	emphasis   = regexp.MustCompile(`\*\*(\S(?:.*?\S)?)\*\*|\*(\S(?:[^*]*?\S)?)\*`)
+)
+
+func plainLine(line string) string {
+	line = linePrefix.ReplaceAllString(line, "")
+	return emphasis.ReplaceAllString(line, "$1$2")
+}
+
 // Chunks splits an entry's body into the pieces that get one embedding each.
 // The result is always the same for the same text, so a chunk's index can be
 // used later to cut the matching paragraph back out (search snippets).
@@ -26,7 +38,7 @@ func Chunks(title, body string) []string {
 	body = photoLine.ReplaceAllString(body, "")
 	var paragraphs []string
 	for _, line := range strings.Split(body, "\n") {
-		if p := strings.Join(strings.Fields(line), " "); p != "" {
+		if p := strings.Join(strings.Fields(plainLine(strings.TrimSpace(line))), " "); p != "" {
 			paragraphs = append(paragraphs, p)
 		}
 	}
