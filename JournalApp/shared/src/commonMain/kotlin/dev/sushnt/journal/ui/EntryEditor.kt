@@ -178,8 +178,10 @@ fun EntryEditor(
     val scope = rememberCoroutineScope()
     val latestText by rememberUpdatedState(text)
     // Draws the title line and the formatting (headings, lists, checkboxes, bold...).
-    val titleLook = remember(titleSize, textStyle.fontSize) { MarkdownLook(titleSize, textStyle.fontSize) }
-    val bodyLook = remember(textStyle.fontSize) { MarkdownLook(null, textStyle.fontSize) }
+    // Keyed on the theme too: the look bakes in colours, so it's rebuilt when they change.
+    val dark = JournalColors.isDark
+    val titleLook = remember(titleSize, textStyle.fontSize, dark) { MarkdownLook(titleSize, textStyle.fontSize, dark) }
+    val bodyLook = remember(textStyle.fontSize, dark) { MarkdownLook(null, textStyle.fontSize, dark) }
     // Where each text field put its lines, to place the formatting menus next to the text.
     // A state map, so a menu appears as soon as the text it belongs to has been laid out.
     val layouts = remember { mutableStateMapOf<Long, TextLayoutResult>() }
@@ -617,7 +619,7 @@ private fun PhotoInEntry(
                     .clickable(role = Role.Button, onClick = onRemove)
                     .semantics { contentDescription = "Remove this photo" },
                 contentAlignment = Alignment.Center,
-            ) { LineIcon(Glyph.Close, JournalColors.Text, size = 13.dp, strokeWidth = 2.4f) }
+            ) { LineIcon(Glyph.Close, OnPhoto, size = 13.dp, strokeWidth = 2.4f) }
         }
     }
 }

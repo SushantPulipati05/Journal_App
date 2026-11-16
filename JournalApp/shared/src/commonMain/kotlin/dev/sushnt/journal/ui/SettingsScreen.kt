@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.sushnt.journal.data.DictationLanguages
+import dev.sushnt.journal.data.ThemeMode
 import dev.sushnt.journal.data.EntryTextSize
 import org.koin.compose.viewmodel.koinViewModel
 
@@ -133,6 +134,28 @@ fun SettingsScreen(onClose: () -> Unit, showBack: Boolean = true, vm: SettingsVi
                 }
             }
             state.error?.let { Text(it, color = JournalColors.Danger, modifier = Modifier.padding(horizontal = 4.dp)) }
+
+            // ---------- appearance ----------
+            Group("Appearance") {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Theme", color = JournalColors.Text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                    Segmented(
+                        options = ThemeMode.entries.map { it.label to FontFamily.SansSerif },
+                        selectedIndex = ThemeMode.entries.indexOf(prefs.theme),
+                        onSelect = { i -> vm.updatePrefs { it.copy(theme = ThemeMode.entries[i]) } },
+                    )
+                    Text(
+                        when (prefs.theme) {
+                            ThemeMode.System -> "Follows your device's light or dark setting."
+                            ThemeMode.Paper -> "Warm paper and ink, like a notebook."
+                            ThemeMode.Dark -> "The dark theme."
+                        },
+                        color = JournalColors.Muted,
+                        fontSize = 12.sp,
+                        lineHeight = 17.sp,
+                    )
+                }
+            }
 
             // ---------- writing ----------
             Group("Writing") {
@@ -331,7 +354,7 @@ private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onChang
             colors = SwitchDefaults.colors(
                 checkedTrackColor = JournalColors.Accent,
                 checkedThumbColor = JournalColors.TextStrong,
-                uncheckedTrackColor = Color(0xFF2A3247),
+                uncheckedTrackColor = JournalColors.SwitchOff,
                 uncheckedThumbColor = JournalColors.Muted,
                 uncheckedBorderColor = Color.Transparent,
             ),

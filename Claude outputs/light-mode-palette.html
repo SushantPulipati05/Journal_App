@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — Light "Paper" Palette</title>
+<style>
+  :root {
+    --page:#F4EDE0; --card:#FBF6EC; --raised:#FFFBF4; --inset:#EFE6D5;
+    --border:#E2D6C2; --border-strong:#D3C3A8;
+    --ink-strong:#2A2017; --ink:#352A20; --body:#3F3329; --preview:#6B5D4C; --muted:#735F4C;
+    --accent:#6A4BC4; --accent-container:#E9E0F4; --streak:#EFE4F2; --streak-border:#D9C7E6;
+    --success:#2F7656; --warning:#865710; --danger:#A8402C;
+    --d-bg:#0B0E17; --d-card:#121827; --d-border:#1F2637; --d-text:#E8EAF2; --d-muted:#8B93A7; --d-accent:#A78BFA; --d-preview:#AEB5C6;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#E7E2D8; color:#2A2017; font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font:600 26px/1.2 Georgia,serif; margin:0 0 6px; }
+  .lead { color:#5A4C3E; margin:0 0 28px; max-width:680px; }
+  h2 { font:600 13px/1 system-ui,sans-serif; letter-spacing:.08em; text-transform:uppercase; color:#6B5D4C; margin:36px 0 14px; }
+  .swatches { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+  .sw { border-radius:12px; overflow:hidden; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+  .sw .chip { height:64px; border-bottom:1px solid rgba(0,0,0,.06); }
+  .sw .meta { padding:8px 10px; font-size:12px; }
+  .sw b { display:block; font-size:13px; }
+  .sw code { color:#6B5D4C; }
+  .sw small { color:#6B5D4C; }
+  .phones { display:flex; gap:28px; flex-wrap:wrap; justify-content:center; }
+  .phone { width:300px; border-radius:34px; padding:12px; background:#1b1b1b; box-shadow:0 10px 30px rgba(0,0,0,.25); }
+  .screen { border-radius:24px; overflow:hidden; height:600px; position:relative; }
+  .label { text-align:center; font-size:13px; color:#5A4C3E; margin-top:10px; }
+  /* light */
+  .light { background:var(--page); color:var(--ink); }
+  .light .muted { color:var(--muted); }
+  .light .accent { color:var(--accent); }
+  .light .card { background:var(--card); border:1px solid var(--border); }
+  .light .pill { background:var(--raised); border:1px solid var(--border); }
+  .light .tab-on { background:var(--accent-container); color:var(--accent); }
+  .light .streak { background:var(--streak); border:1px solid var(--streak-border); }
+  /* dark (for comparison) */
+  .dark { background:var(--d-bg); color:var(--d-text); }
+  .dark .muted { color:var(--d-muted); }
+  .dark .accent { color:var(--d-accent); }
+  .dark .card { background:var(--d-card); border:1px solid var(--d-border); }
+  .dark .pill { background:#151B2B; border:1px solid var(--d-border); }
+  .dark .tab-on { background:#262046; color:var(--d-accent); }
+  .dark .streak { background:#161230; border:1px solid #2C2558; }
+  .pad { padding:18px 18px 0; }
+  .serif { font-family:Georgia,"Times New Roman",serif; }
+  .day { font-size:11px; letter-spacing:.12em; font-weight:600; }
+  .date { font-size:26px; margin:2px 0 18px; }
+  .title { font-size:24px; font-weight:500; margin:0 0 10px; }
+  .p { font-size:15.5px; line-height:1.75; margin:0 0 6px; }
+  .h { font-size:20px; font-weight:600; margin:14px 0 4px; }
+  .li { font-size:15.5px; line-height:1.8; }
+  .li .mk { font-weight:700; margin-right:8px; }
+  .done { text-decoration:line-through; }
+  .tabbar { position:absolute; bottom:16px; left:50%; transform:translateX(-50%); display:flex; gap:4px; padding:5px; border-radius:999px; }
+  .tabbar span { padding:8px 16px; border-radius:999px; font-size:13px; font-weight:600; }
+  .footer { position:absolute; bottom:70px; left:18px; right:18px; display:flex; justify-content:space-between; font-size:12px; }
+  .sel { background:rgba(106,75,196,.18); border-radius:3px; }
+  .dark .sel { background:rgba(167,139,250,.25); }
+  .fmt { display:inline-flex; gap:2px; padding:4px 6px; border-radius:999px; box-shadow:0 4px 14px rgba(0,0,0,.12); margin:6px 0 4px 40px; }
+  .fmt span { padding:4px 10px; font-size:14px; }
+  .entry { border-radius:16px; padding:14px; margin:0 0 10px; }
+  .entry .t { font-size:18px; font-weight:500; margin:2px 0 4px; }
+  .entry .pv { font-size:13.5px; line-height:1.55; }
+  .search { border-radius:14px; padding:10px 14px; font-size:14px; margin:0 0 12px; }
+  .streak { border-radius:16px; padding:12px 14px; margin:0 0 12px; font-size:13.5px; }
+  .notes { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:14px; }
+  .note { background:#FBF8F2; border-radius:12px; padding:14px 16px; font-size:14px; color:#3F3329; }
+  .note b { color:#2A2017; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Light mode: “Paper” palette</h1>
+  <p class="lead">Warm, book-like paper instead of pure white, with sepia-black ink and the app's purple darkened so it reads well on paper. All text colours meet WCAG AA contrast (4.5:1+) on the page colour. The dark phone is today's theme, for comparison.</p>
+
+  <h2>The palette</h2>
+  <div class="swatches">
+    <div class="sw"><div class="chip" style="background:#F4EDE0"></div><div class="meta"><b>Page</b><code>#F4EDE0</code><br><small>background, like book paper</small></div></div>
+    <div class="sw"><div class="chip" style="background:#FBF6EC"></div><div class="meta"><b>Card</b><code>#FBF6EC</code><br><small>entry cards, sheets</small></div></div>
+    <div class="sw"><div class="chip" style="background:#FFFBF4"></div><div class="meta"><b>Raised</b><code>#FFFBF4</code><br><small>menus, tab bar, snackbars</small></div></div>
+    <div class="sw"><div class="chip" style="background:#EFE6D5"></div><div class="meta"><b>Inset</b><code>#EFE6D5</code><br><small>search box, fields</small></div></div>
+    <div class="sw"><div class="chip" style="background:#E2D6C2"></div><div class="meta"><b>Border</b><code>#E2D6C2</code><br><small>card edges, dividers</small></div></div>
+    <div class="sw"><div class="chip" style="background:#2A2017"></div><div class="meta"><b>Ink, strong</b><code>#2A2017</code><br><small>titles · 13.7:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#3F3329"></div><div class="meta"><b>Ink, body</b><code>#3F3329</code><br><small>what you write · 10.5:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#6B5D4C"></div><div class="meta"><b>Preview</b><code>#6B5D4C</code><br><small>card previews · 5.5:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#735F4C"></div><div class="meta"><b>Muted</b><code>#735F4C</code><br><small>dates, hints · 5.2:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#6A4BC4"></div><div class="meta"><b>Accent</b><code>#6A4BC4</code><br><small>links, cursor, active tab · 5.3:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#E9E0F4"></div><div class="meta"><b>Accent tint</b><code>#E9E0F4</code><br><small>selected tab, highlights</small></div></div>
+    <div class="sw"><div class="chip" style="background:#2F7656"></div><div class="meta"><b>Saved</b><code>#2F7656</code><br><small>✓ saved · 4.7:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#865710"></div><div class="meta"><b>Not synced</b><code>#865710</code><br><small>warning dot · 5.3:1</small></div></div>
+    <div class="sw"><div class="chip" style="background:#A8402C"></div><div class="meta"><b>Delete</b><code>#A8402C</code><br><small>danger · 5.3:1</small></div></div>
+  </div>
+
+  <h2>On the phone</h2>
+  <div class="phones">
+    <div>
+      <div class="phone"><div class="screen light">
+        <div class="pad">
+          <div class="day accent">MONDAY</div>
+          <div class="date serif">16 November</div>
+          <div class="title serif">A slow Sunday</div>
+          <p class="p serif">Woke up late and made <span class="sel">filter coffee</span> on the terrace.</p>
+          <div class="fmt pill"><span><b>B</b></span><span><i>I</i></span><span>H</span><span>•</span><span>☐</span></div>
+          <div class="h serif">To do</div>
+          <div class="li serif"><span class="mk accent">☐</span>Call Sneha about the trip</div>
+          <div class="li serif muted"><span class="mk accent">☑</span><span class="done">Finish the report</span></div>
+          <div class="li serif"><span class="mk accent">•</span>Gym in the evening</div>
+        </div>
+        <div class="footer muted"><span>9:06 PM · 42 words</span><span class="accent">🎤 &nbsp;🖼</span></div>
+        <div class="tabbar pill"><span class="tab-on">Write</span><span class="muted">Journals</span><span class="accent">＋</span></div>
+      </div></div>
+      <div class="label">Light “Paper” · writing</div>
+    </div>
+
+    <div>
+      <div class="phone"><div class="screen light">
+        <div class="pad">
+          <div class="serif" style="font-size:28px;font-weight:700;color:var(--ink-strong)">Journals</div>
+          <div class="muted" style="font-size:13px;margin-bottom:14px">128 entries</div>
+          <div class="search pill muted" style="background:var(--inset)">Search your entries</div>
+          <div class="streak">🔥 <b>6 days</b> in a row</div>
+          <div class="muted" style="font-size:11px;letter-spacing:.1em;font-weight:600;margin:4px 0 8px">TODAY</div>
+          <div class="entry card"><div class="accent" style="font-size:12px;font-weight:600">9:06 PM</div><div class="t serif" style="color:var(--ink-strong)">A slow Sunday</div><div class="pv" style="color:var(--preview)">Woke up late and made filter coffee on the terrace. To do: call Sneha…</div></div>
+          <div class="entry card"><div class="accent" style="font-size:12px;font-weight:600">8:12 AM</div><div class="t serif" style="color:var(--ink-strong)">Interview prep</div><div class="pv" style="color:var(--preview)">Practised the queue question again, this time saying every step out loud…</div></div>
+        </div>
+        <div class="tabbar pill"><span class="muted">Write</span><span class="tab-on">Journals</span><span class="accent">＋</span></div>
+      </div></div>
+      <div class="label">Light “Paper” · journals</div>
+    </div>
+
+    <div>
+      <div class="phone"><div class="screen dark">
+        <div class="pad">
+          <div class="day accent">MONDAY</div>
+          <div class="date serif">16 November</div>
+          <div class="title serif">A slow Sunday</div>
+          <p class="p serif" style="color:#D6D9E3">Woke up late and made <span class="sel">filter coffee</span> on the terrace.</p>
+          <div class="fmt pill"><span><b>B</b></span><span><i>I</i></span><span>H</span><span>•</span><span>☐</span></div>
+          <div class="h serif">To do</div>
+          <div class="li serif" style="color:#D6D9E3"><span class="mk accent">☐</span>Call Sneha about the trip</div>
+          <div class="li serif muted"><span class="mk accent">☑</span><span class="done">Finish the report</span></div>
+          <div class="li serif" style="color:#D6D9E3"><span class="mk accent">•</span>Gym in the evening</div>
+        </div>
+        <div class="footer muted"><span>9:06 PM · 42 words</span><span class="accent">🎤 &nbsp;🖼</span></div>
+        <div class="tabbar pill"><span class="tab-on">Write</span><span class="muted">Journals</span><span class="accent">＋</span></div>
+      </div></div>
+      <div class="label">Today's dark theme (unchanged)</div>
+    </div>
+  </div>
+
+  <h2>Decisions to check</h2>
+  <div class="notes">
+    <div class="note"><b>Paper, not white.</b> The page is a warm cream; cards are a lighter sheet on top, so they lift off the page without heavy shadows.</div>
+    <div class="note"><b>Ink, not black.</b> Text is a sepia-black, softer than #000 but still 10–14:1 contrast for long reading.</div>
+    <div class="note"><b>Same purple, deeper.</b> The dark theme's lavender would be too faint on paper, so the accent is a deeper violet of the same hue.</div>
+    <div class="note"><b>Setting:</b> Settings → Appearance → <b>System</b> / Paper / Dark. “System” follows the phone's light/dark mode.</div>
+  </div>
+</div>
+</body>
+</html>

@@ -59,7 +59,7 @@ fun TabBar(current: HomeTab, onSelect: (HomeTab) -> Unit, modifier: Modifier = M
 
 @Composable
 private fun TabButton(label: String, glyph: Glyph, isSelected: Boolean, onClick: () -> Unit) {
-    val color by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFF9AA3B8), Motion.standard(), label = "tab text")
+    val color by animateColorAsState(if (isSelected) JournalColors.Accent else JournalColors.IconDim, Motion.standard(), label = "tab text")
     val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "tab fill")
     val source = remember { MutableInteractionSource() }
     Row(
@@ -92,7 +92,7 @@ fun SettingsButton(onClick: () -> Unit) {
             .semantics { contentDescription = "Account and settings" },
         contentAlignment = Alignment.Center,
     ) {
-        LineIcon(Glyph.Person, Color(0xFFC9CEDB))
+        LineIcon(Glyph.Person, JournalColors.Icon)
     }
 }
 
@@ -170,7 +170,7 @@ fun NewEntryButton(onClick: () -> Unit) {
             .pressScale(source)
             .shadow(16.dp, CircleShape)
             .background(JournalColors.AccentContainer, CircleShape)
-            .border(1.dp, Color(0xFF343D57), CircleShape)
+            .border(1.dp, JournalColors.Hover, CircleShape)
             .clip(CircleShape)
             .clickable(interactionSource = source, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = "New entry" },

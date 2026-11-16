@@ -78,14 +78,13 @@ private val QuestionStarts = setOf(
  *  - spoken commands work in English: "comma", "full stop", "question mark",
  *    "exclamation mark", "new line" / "new paragraph";
  *  - a pause ends a sentence: "." is added (or "?" when it starts like a question,
- *    "।" in Hindi and Marathi), unless the phone already punctuated it;
+ *    "।" in Hindi and Marathi) unless it already ends with one;
  *  - each sentence starts with a capital letter.
  */
 internal fun punctuate(raw: String, language: String): String {
     var t = raw.trim()
     if (t.isEmpty()) return t
     val english = language.isEmpty() || language.startsWith("en")
-    val phonePunctuates = t.any { it in ".?!," }
     if (english) {
         t = t.replace(Regex("""(?i)\s*\b(new paragraph|new line|next line)\b\s*"""), "\n")
         t = t.replace(Regex("""(?i)\s*\bcomma\b"""), ",")
@@ -94,18 +93,19 @@ internal fun punctuate(raw: String, language: String): String {
         t = t.replace(Regex("""(?i)\s*\bexclamation (mark|point)\b"""), "!")
         t = t.replace(Regex("""([,.?!])(?=\p{L})"""), "$1 ") // "word.next" -> "word. next" (not "3.5")
     }
-    if (!phonePunctuates) {
-        // "…went home new line" ends that sentence too.
-        t = t.replace(Regex("""(?<=[\p{L}\p{N}])\n"""), ".\n")
-        val last = t.lastOrNull()
-        if (last != null && last !in ".?!,\n") {
-            val sentence = t.substringAfterLast('\n').split(Regex("""[.?!]\s""")).last()
-            val firstWord = sentence.trim().substringBefore(' ').lowercase()
-            t += when {
-                english && firstWord in QuestionStarts -> "?"
-                language.startsWith("hi") || language.startsWith("mr") -> "।"
-                else -> "."
-            }
+    // "…went home new line" ends that sentence too.
+    t = t.replace(Regex("""(?<=[\p{L}\p{N}])\n"""), ".\n")
+    // Every finished piece ends a sentence, even when the phone added some commas
+    // itself (some phones turn a spoken "comma" into "," but never end sentences).
+    val last = t.lastOrNull()
+    if (last != null && last !in ".?!।\n") {
+        if (last == ',') t = t.dropLast(1)
+        val sentence = t.substringAfterLast('\n').split(Regex("""[.?!]\s""")).last()
+        val firstWord = sentence.trim().substringBefore(' ').lowercase()
+        t += when {
+            english && firstWord in QuestionStarts -> "?"
+            language.startsWith("hi") || language.startsWith("mr") -> "।"
+            else -> "."
         }
     }
     // Capital letters at the start of each sentence.
@@ -140,6 +140,6 @@ fun MicButton(dictation: Dictation, modifier: Modifier = Modifier) {
             )
             Box(Modifier.size(34.dp).clip(CircleShape).background(JournalColors.AccentContainer))
         }
-        LineIcon(Glyph.Mic, if (listening) JournalColors.Accent else Color(0xFFC9CEDB))
+        LineIcon(Glyph.Mic, if (listening) JournalColors.Accent else JournalColors.Icon)
     }
 }

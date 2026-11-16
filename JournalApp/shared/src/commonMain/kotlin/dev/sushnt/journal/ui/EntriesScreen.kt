@@ -216,7 +216,7 @@ private fun SwipeToDelete(modifier: Modifier, onDelete: () -> Unit, content: @Co
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Box(
-                Modifier.fillMaxSize().clip(CardShape).background(Color(0xFF3A1622)).padding(horizontal = 24.dp),
+                Modifier.fillMaxSize().clip(CardShape).background(JournalColors.DangerContainer).padding(horizontal = 24.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Text("Delete", color = JournalColors.Danger, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
@@ -270,7 +270,7 @@ private fun SearchField(query: String, onChange: (String) -> Unit, focus: FocusR
     }
 }
 
-private val PlaceholderColor = Color(0xFF7C859B)
+private val PlaceholderColor get() = JournalColors.Placeholder
 
 @Composable
 private fun StreakCard(days: Int) {
@@ -308,7 +308,7 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
             .pressScale(source)
             .then(
                 if (selected) {
-                    Modifier.clip(CardShape).background(Color(0xFF171B33)).border(1.dp, JournalColors.Accent, CardShape)
+                    Modifier.clip(CardShape).background(JournalColors.SelectedCard).border(1.dp, JournalColors.Accent, CardShape)
                 } else {
                     Modifier.card()
                 },
@@ -354,9 +354,9 @@ private fun EntryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClick:
                 shown.forEach { id -> PhotoThumb(id, Modifier.weight(1f)) }
                 if (photoList.size > 4) {
                     Box(
-                        Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1A2132)),
+                        Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(10.dp)).background(JournalColors.Inset),
                         contentAlignment = Alignment.Center,
-                    ) { Text("+${photoList.size - 3}", color = Color(0xFFC9CEDB), fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
+                    ) { Text("+${photoList.size - 3}", color = JournalColors.Icon, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
                 }
                 repeat(4 - shown.size - (if (photoList.size > 4) 1 else 0)) { Spacer(Modifier.weight(1f)) }
             }

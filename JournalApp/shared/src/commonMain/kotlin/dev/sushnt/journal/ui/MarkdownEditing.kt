@@ -73,7 +73,12 @@ internal fun mdSpanStyle(style: MdStyle, bodySize: TextUnit): SpanStyle = when (
  * Markdown below it. The drawn text has exactly the same length as the real text, so
  * the cursor lines up character for character (OffsetMapping.Identity).
  */
-internal class MarkdownLook(private val titleSize: TextUnit?, private val bodySize: TextUnit) : VisualTransformation {
+internal class MarkdownLook(
+    private val titleSize: TextUnit?,
+    private val bodySize: TextUnit,
+    /** Only here so a theme change makes a different look (and the text is redrawn). */
+    private val dark: Boolean = JournalColors.isDark,
+) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
         val look = markdownLook(text.text, firstLineIsTitle = titleSize != null)
         val styled = buildAnnotatedString {
@@ -90,8 +95,8 @@ internal class MarkdownLook(private val titleSize: TextUnit?, private val bodySi
         return TransformedText(styled, OffsetMapping.Identity)
     }
 
-    override fun equals(other: Any?) = other is MarkdownLook && other.titleSize == titleSize && other.bodySize == bodySize
-    override fun hashCode() = titleSize.hashCode() * 31 + bodySize.hashCode()
+    override fun equals(other: Any?) = other is MarkdownLook && other.titleSize == titleSize && other.bodySize == bodySize && other.dark == dark
+    override fun hashCode() = (titleSize.hashCode() * 31 + bodySize.hashCode()) * 31 + dark.hashCode()
 }
 
 /** Formatted text for reading (timeline, entry view): markers removed, styles applied. */

@@ -34,8 +34,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-private val SkeletonBase = Color(0xFF1A2132)
-private val SkeletonShine = Color(0xFF262E45)
+private val SkeletonBase get() = JournalColors.Skeleton
+private val SkeletonShine get() = JournalColors.SkeletonShine
 
 /**
  * A soft light sweeping across a grey shape: "something is loading here".
@@ -114,7 +114,7 @@ fun SkeletonEntryCard(modifier: Modifier = Modifier, lines: Int = 2, titleFracti
 @Composable
 fun SkeletonTimelineDay(modifier: Modifier = Modifier, paragraphLines: Int = 4) {
     Column(modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A2132)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Divider))
         Row(Modifier.fillMaxWidth().padding(vertical = 26.dp)) {
             Column(Modifier.width(84.dp), horizontalAlignment = androidx.compose.ui.Alignment.End) {
                 SkeletonBlock(width = 46.dp, height = 40.dp, shape = RoundedCornerShape(8.dp))

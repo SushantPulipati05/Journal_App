@@ -80,7 +80,7 @@ fun Sidebar(
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
-            IconAction(Glyph.Panel, "Close sidebar", Color(0xFF9AA3B8), onClose)
+            IconAction(Glyph.Panel, "Close sidebar", JournalColors.IconDim, onClose)
         }
         NavButton(Glyph.Pen, "Write", "Ctrl N", current == SidebarItem.Write) { onSelect(SidebarItem.Write) }
         NavButton(Glyph.Book, "Journals", entryCount.toString(), current == SidebarItem.Journals) { onSelect(SidebarItem.Journals) }
@@ -155,7 +155,7 @@ fun ClosedSidebarBar(userName: String?, accountLoading: Boolean, onOpenSidebar: 
         Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconAction(Glyph.Panel, "Open sidebar", Color(0xFF9AA3B8), onOpenSidebar)
+        IconAction(Glyph.Panel, "Open sidebar", JournalColors.IconDim, onOpenSidebar)
         Spacer(Modifier.width(6.dp))
         BrandMark(18.dp)
         Spacer(Modifier.width(6.dp))
@@ -167,7 +167,7 @@ fun ClosedSidebarBar(userName: String?, accountLoading: Boolean, onOpenSidebar: 
 
 @Composable
 private fun NavButton(glyph: Glyph, label: String, trailing: String, isSelected: Boolean, onClick: () -> Unit) {
-    val color by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFFC9CEDB), Motion.standard(), label = "nav ink")
+    val color by animateColorAsState(if (isSelected) JournalColors.Accent else JournalColors.Icon, Motion.standard(), label = "nav ink")
     val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "nav fill")
     Row(
         Modifier

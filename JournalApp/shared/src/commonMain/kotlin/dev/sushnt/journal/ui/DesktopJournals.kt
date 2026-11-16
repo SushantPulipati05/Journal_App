@@ -257,7 +257,7 @@ private fun SearchBox(query: String, onChange: (String) -> Unit, focus: FocusReq
         LineIcon(Glyph.Search, JournalColors.Muted, size = 16.dp)
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text("Search entries", color = Color(0xFF7C859B), fontSize = 13.sp)
+            if (query.isEmpty()) Text("Search entries", color = JournalColors.Placeholder, fontSize = 13.sp)
             BasicTextField(
                 value = query,
                 onValueChange = onChange,
@@ -298,7 +298,7 @@ private fun ViewSwitch(view: JournalsView, onChange: (JournalsView) -> Unit) {
 
 @Composable
 private fun ViewSwitchButton(label: String, glyph: Glyph, isSelected: Boolean, onClick: () -> Unit) {
-    val ink by animateColorAsState(if (isSelected) JournalColors.Accent else Color(0xFF9AA3B8), Motion.standard(), label = "switch ink")
+    val ink by animateColorAsState(if (isSelected) JournalColors.Accent else JournalColors.IconDim, Motion.standard(), label = "switch ink")
     val fill by animateColorAsState(if (isSelected) JournalColors.AccentContainer else Color.Transparent, Motion.standard(), label = "switch fill")
     Row(
         Modifier
@@ -348,7 +348,7 @@ private fun MonthHeader(label: String, count: Int, modifier: Modifier = Modifier
     Row(modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = JournalColors.TextStrong, fontFamily = writingFont(true), fontSize = 22.sp, fontWeight = FontWeight.Medium)
         Spacer(Modifier.width(14.dp))
-        Box(Modifier.weight(1f).height(1.dp).background(Color(0xFF1A2132)))
+        Box(Modifier.weight(1f).height(1.dp).background(JournalColors.Divider))
         Spacer(Modifier.width(14.dp))
         Text(if (count == 1) "1 entry" else "$count entries", color = JournalColors.Muted, fontSize = 12.sp)
     }
@@ -362,7 +362,7 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
     val border by animateColorAsState(
         when {
             selected -> JournalColors.Accent
-            hovered -> Color(0xFF343D57)
+            hovered -> JournalColors.Hover
             else -> JournalColors.Border
         },
         Motion.standard(),
@@ -381,7 +381,7 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
             .offset(y = lift)
             .pressScale(source)
             .clip(shape)
-            .background(if (selected) Color(0xFF171B33) else JournalColors.Card)
+            .background(if (selected) JournalColors.SelectedCard else JournalColors.Card)
             .border(1.dp, border, shape)
             .hoverable(source)
             .clickable(interactionSource = source, indication = LocalIndication.current, role = Role.Button, onClick = onClick)
@@ -395,7 +395,7 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
                 PhotoView(photoList.first(), maxHeight = 220.dp, corner = 12.dp, decodeMaxSide = 720)
                 Text(
                     if (photoList.size == 1) "1 photo" else "${photoList.size} photos",
-                    color = JournalColors.Text,
+                    color = OnPhoto,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
@@ -453,7 +453,7 @@ private fun GalleryCard(entry: Entry, prefs: AppPrefs, selected: Boolean, onClic
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (words == 1) "1 word" else "$words words", color = Color(0xFF6B7389), fontSize = 11.sp)
+            Text(if (words == 1) "1 word" else "$words words", color = JournalColors.Hint, fontSize = 11.sp)
             if (entry.dirty) {
                 Spacer(Modifier.weight(1f))
                 Box(Modifier.size(6.dp).clip(CircleShape).background(JournalColors.Warning))
@@ -503,7 +503,7 @@ private fun Timeline(entries: List<Entry>, all: List<Entry>, prefs: AppPrefs, on
 @Composable
 private fun TimelineDay(day: LocalDate, entries: List<Entry>, prefs: AppPrefs, onOpen: (Entry) -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth()) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF1A2132)))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(JournalColors.Divider))
         Row(Modifier.fillMaxWidth().padding(vertical = 26.dp)) {
             Column(Modifier.width(84.dp), horizontalAlignment = Alignment.End) {
                 Text(day.day.toString(), color = JournalColors.TextStrong, fontFamily = writingFont(true), fontSize = 44.sp, lineHeight = 44.sp, fontWeight = FontWeight.Medium)
@@ -519,7 +519,7 @@ private fun TimelineDay(day: LocalDate, entries: List<Entry>, prefs: AppPrefs, o
             Spacer(Modifier.width(28.dp))
             Column(Modifier.weight(1f).widthIn(max = 660.dp)) {
                 entries.forEachIndexed { i, entry ->
-                    if (i > 0) Box(Modifier.padding(top = 6.dp, bottom = 20.dp).width(40.dp).height(1.dp).background(Color(0xFF262E45)))
+                    if (i > 0) Box(Modifier.padding(top = 6.dp, bottom = 20.dp).width(40.dp).height(1.dp).background(JournalColors.DividerStrong))
                     TimelineEntry(entry, prefs, onClick = { onOpen(entry) })
                 }
             }
@@ -613,7 +613,7 @@ private fun MonthCalendar(entries: List<Entry>, onJump: (LocalDate) -> Unit, mod
         }
         Row(Modifier.fillMaxWidth()) {
             listOf("M", "T", "W", "T", "F", "S", "S").forEach {
-                Text(it, color = Color(0xFF6B7389), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                Text(it, color = JournalColors.Hint, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -654,7 +654,7 @@ private fun DayCell(day: LocalDate, isToday: Boolean, wrote: Boolean, future: Bo
     val ink = when {
         isToday -> JournalColors.Background
         wrote -> JournalColors.Text
-        future -> Color(0xFF3A4258)
+        future -> JournalColors.Faint
         else -> JournalColors.Muted
     }
     var modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp)).background(fill)
@@ -670,7 +670,7 @@ private fun SmallArrow(glyph: Glyph, description: String, onClick: () -> Unit) {
         Modifier
             .size(28.dp)
             .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, Color(0xFF262E45), RoundedCornerShape(8.dp))
+            .border(1.dp, JournalColors.DividerStrong, RoundedCornerShape(8.dp))
             .clickable(role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
@@ -693,7 +693,7 @@ private fun GallerySkeleton() {
             Row(Modifier.padding(top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 SkeletonBlock(width = 120.dp, height = 20.dp)
                 Spacer(Modifier.width(14.dp))
-                Box(Modifier.weight(1f).height(1.dp).background(Color(0xFF1A2132)))
+                Box(Modifier.weight(1f).height(1.dp).background(JournalColors.Divider))
             }
         }
         items(listOf(3, 1, 5, 2, 4, 2, 6, 3)) { lines ->

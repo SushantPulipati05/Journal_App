@@ -19,6 +19,9 @@ enum class EntryTextSize(val label: String, val sp: Int) {
     ExtraLarge("Extra large", 25),
 }
 
+/** Light or dark. System = follow the phone or computer's own setting. */
+enum class ThemeMode(val label: String) { System("System"), Paper("Paper"), Dark("Dark") }
+
 /** How the desktop Journals page lays out entries. */
 enum class JournalsView { Gallery, Timeline }
 
@@ -33,6 +36,8 @@ data class AppPrefs(
     val sidebarCollapsed: Boolean = false,
     /** Desktop/tablet Journals page: cards or one long diary stream. */
     val journalsView: JournalsView = JournalsView.Gallery,
+    /** Paper (light), Dark, or whatever the device uses. */
+    val theme: ThemeMode = ThemeMode.System,
     /** Language for dictation, e.g. "en-IN". "" = the phone's own language. */
     val dictationLanguage: String = "en-IN",
 )
@@ -78,6 +83,7 @@ class PrefsStore(
             write("sidebar_collapsed", next.sidebarCollapsed.toString())
             write("journals_view", next.journalsView.name)
             write("dictation_language", next.dictationLanguage)
+            write("theme", next.theme.name)
         }
     }
 
@@ -91,6 +97,7 @@ class PrefsStore(
             continueLastEntry = map["continue_last"]?.toBooleanStrictOrNull() ?: defaults.continueLastEntry,
             sidebarCollapsed = map["sidebar_collapsed"]?.toBooleanStrictOrNull() ?: defaults.sidebarCollapsed,
             journalsView = JournalsView.entries.firstOrNull { it.name == map["journals_view"] } ?: defaults.journalsView,
+            theme = ThemeMode.entries.firstOrNull { it.name == map["theme"] } ?: defaults.theme,
             dictationLanguage = map["dictation_language"]
                 ?.takeIf { tag -> DictationLanguages.any { it.first == tag } } ?: defaults.dictationLanguage,
         )

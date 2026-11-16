@@ -79,9 +79,9 @@ import org.koin.compose.viewmodel.koinViewModel
  * Forgot password uses the same card / sheet.
  */
 
-private val SheetColor = Color(0xFF10152A)
+private val SheetColor get() = JournalColors.Sheet
 private val FieldColor = JournalColors.Card
-private val ButtonLight = Color(0xFFF2F3F8)
+private val ButtonLight get() = JournalColors.TextStrong
 
 /** Phone flow: the welcome sheet, or the email form. */
 private enum class PhoneStep { Welcome, Email }
@@ -216,7 +216,7 @@ private fun PhoneAuth(vm: AuthViewModel, state: AuthUiState, form: FormValues, g
         ) {
             Box(
                 Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp)
-                    .size(width = 40.dp, height = 4.dp).clip(CircleShape).background(Color(0xFF2A3147)),
+                    .size(width = 40.dp, height = 4.dp).clip(CircleShape).background(JournalColors.BorderStrong),
             )
             AnimatedContent(Triple(step, state.resetStep == null, state.isSignup), label = "auth sheet") { (shownStep, normal, signup) ->
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -373,7 +373,7 @@ private fun LinkLine(
         Text(
             buildAnnotatedString {
                 append(lead)
-                withStyle(SpanStyle(color = Color(0xFFC4B5FD), fontWeight = FontWeight.SemiBold)) { append(link) }
+                withStyle(SpanStyle(color = JournalColors.Accent, fontWeight = FontWeight.SemiBold)) { append(link) }
             },
             color = JournalColors.Muted,
             fontSize = 14.sp,
@@ -422,7 +422,7 @@ private fun AuthField(
                     LineIcon(glyph, JournalColors.Muted, size = 17.dp)
                     Spacer(Modifier.width(10.dp))
                     Box(Modifier.weight(1f)) {
-                        if (value.isEmpty()) Text(placeholder, color = Color(0xFF6B7389), fontSize = 15.sp)
+                        if (value.isEmpty()) Text(placeholder, color = JournalColors.Hint, fontSize = 15.sp)
                         field()
                     }
                     if (isPassword) {
@@ -439,7 +439,7 @@ private fun AuthField(
             },
         )
         if (hint != null) {
-            Text(hint, color = Color(0xFF6B7389), fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+            Text(hint, color = JournalColors.Hint, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
         }
     }
 }
@@ -474,7 +474,7 @@ private fun PrimaryButton(text: String, loading: Boolean, glyph: Glyph? = null, 
 private fun OrDivider(text: String) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.weight(1f).height(1.dp).background(JournalColors.Border))
-        Text(text, color = Color(0xFF6B7389), fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
+        Text(text, color = JournalColors.Hint, fontSize = 12.sp, modifier = Modifier.padding(horizontal = 12.dp))
         Box(Modifier.weight(1f).height(1.dp).background(JournalColors.Border))
     }
 }
@@ -483,7 +483,7 @@ private fun OrDivider(text: String) {
 private fun Terms() {
     Text(
         "By continuing you agree to our Terms and Privacy Policy.\nYour entries stay private to your account.",
-        color = Color(0xFF6B7389),
+        color = JournalColors.Hint,
         fontSize = 11.5.sp,
         lineHeight = 18.sp,
         textAlign = TextAlign.Center,
@@ -505,9 +505,9 @@ private fun LogoTile(size: Dp, modifier: Modifier = Modifier) {
         modifier
             .size(size)
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF231B45), Color(0xFF0F1222))))
+            .background(Brush.linearGradient(listOf(JournalColors.GlowStart, JournalColors.GlowEnd)))
             .background(Brush.radialGradient(listOf(JournalColors.Accent.copy(alpha = 0.28f), Color.Transparent)))
-            .border(1.dp, Color(0xFF2C2558), shape),
+            .border(1.dp, JournalColors.StreakBorder, shape),
         contentAlignment = Alignment.Center,
     ) { BrandMark(size * 0.62f) }
 }
@@ -553,7 +553,7 @@ private fun GoogleButton(action: GoogleAction, signup: Boolean, loading: Boolean
             .height(50.dp)
             .clip(shape)
             .background(FieldColor)
-            .border(1.dp, Color(0xFF262E45), shape)
+            .border(1.dp, JournalColors.DividerStrong, shape)
             .clickable(enabled = !loading, role = Role.Button, onClick = action.onClick),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

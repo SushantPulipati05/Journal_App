@@ -64,7 +64,7 @@ fun EntrySheet(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF05070C).copy(alpha = 0.62f))
+                    .background(JournalColors.Scrim)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(null) },
             )
         }
@@ -86,7 +86,7 @@ fun EntrySheet(
                     .fillMaxHeight()
                     .shadow(40.dp, shape)
                     .clip(shape)
-                    .background(Color(0xFF10152A))
+                    .background(JournalColors.Sheet)
                     .border(1.dp, JournalColors.BorderStrong, shape)
                     // Clicks inside the sheet must not reach the backdrop (which closes it).
                     .pointerInput(Unit) { detectTapGestures { } },

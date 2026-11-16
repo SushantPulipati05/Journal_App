@@ -96,6 +96,17 @@ private class AndroidDictation(
     private var onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
         SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 
+    /**
+     * Words already written for good in the current recognizer session. Some recognizers
+     * (the on-device one especially) repeat earlier sentences: partial results that start
+     * with the sentence just finished, or a final result holding the whole session. Without
+     * this, those words would be written twice.
+     */
+    private var sessionWords: List<String> = emptyList()
+
+    /** The last sentence written for good, to drop an identical one sent twice. */
+    private var lastFinal = ""
+
     /** Anything recognised since the mic was turned on. */
     private var heardAnything = false
 
@@ -141,6 +152,7 @@ private class AndroidDictation(
         listening = true
         ready = false
         pending = ""
+        lastFinal = ""
         quietRestarts = 0
         heardAnything = false
         listenAgain()
@@ -158,7 +170,41 @@ private class AndroidDictation(
             it.setRecognitionListener(this)
             recognizer = it
         }
+        sessionWords = emptyList() // a new session starts from nothing
         r.startListening(intent())
+    }
+
+    /** Lower-case words without punctuation, for comparing what was heard. */
+    private fun normalWords(text: String): List<String> =
+        text.lowercase().split(Regex("""\s+""")).map { it.trim { c -> !c.isLetterOrDigit() } }.filter { it.isNotEmpty() }
+
+    /** [text] minus the words of this session that were already written (if it repeats them). */
+    private fun newPart(text: String): String {
+        val done = sessionWords
+        if (done.size < 2) return text
+        val heard = normalWords(text)
+        if (heard.size < done.size || heard.subList(0, done.size) != done) return text
+        // Drop the first done.size words of the original text, keeping its punctuation.
+        var dropped = 0
+        var i = 0
+        while (i < text.length && dropped < done.size) {
+            while (i < text.length && text[i].isWhitespace()) i++
+            val start = i
+            while (i < text.length && !text[i].isWhitespace()) i++
+            if (text.substring(start, i).any { it.isLetterOrDigit() }) dropped++
+        }
+        return text.substring(i).trim()
+    }
+
+    /** Writes a finished sentence once: no repeats of the session or of the last sentence. */
+    private fun writeFinal(raw: String) {
+        val text = newPart(raw)
+        if (text.isBlank()) return
+        val clean = punctuate(cleanTranscript(text), language)
+        if (clean.isBlank() || normalWords(clean) == normalWords(lastFinal)) return
+        sessionWords = sessionWords + normalWords(text)
+        lastFinal = clean
+        onText(clean, true)
     }
 
     override fun stop() {
@@ -189,7 +235,7 @@ private class AndroidDictation(
     }
 
     private fun commitPending() {
-        if (pending.isNotBlank()) onText(punctuate(cleanTranscript(pending), language), true)
+        if (pending.isNotBlank()) writeFinal(pending)
         pending = ""
     }
 
@@ -212,7 +258,7 @@ private class AndroidDictation(
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
-        val words = partialResults?.best().orEmpty()
+        val words = newPart(partialResults?.best().orEmpty())
         if (words.isBlank()) return
         pending = words
         heardAnything = true
@@ -223,8 +269,8 @@ private class AndroidDictation(
     override fun onResults(results: Bundle?) {
         val words = results?.best().orEmpty()
         pending = ""
-        if (listening) listenAgain() // restart first, so the gap where words get lost is tiny
-        if (words.isNotBlank()) onText(punctuate(cleanTranscript(words), language), true)
+        writeFinal(words) // before restarting: the restart forgets this session's words
+        if (listening) listenAgain()
         if (!listening) finish()
     }
 
@@ -234,7 +280,7 @@ private class AndroidDictation(
         pending = ""
         if (words.isNotBlank()) {
             quietRestarts = 0
-            onText(punctuate(cleanTranscript(words), language), true)
+            writeFinal(words)
         }
     }
 

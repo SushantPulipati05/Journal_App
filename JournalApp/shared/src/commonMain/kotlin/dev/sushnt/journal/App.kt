@@ -101,7 +101,9 @@ import kotlin.time.Duration.Companion.minutes
 /** The whole app. Every platform shows this. initKoin() must have run first. */
 @Composable
 fun App() {
-    JournalTheme {
+    // Starts from the saved choice, so there's no flash of the wrong theme.
+    val appPrefs by koinInject<PrefsStore>().prefs.collectAsState()
+    JournalTheme(appPrefs.theme) {
         Surface(Modifier.fillMaxSize(), color = JournalColors.Background) {
             val session = koinInject<SessionManager>()
             val signedIn by session.signedIn.collectAsState(initial = null)

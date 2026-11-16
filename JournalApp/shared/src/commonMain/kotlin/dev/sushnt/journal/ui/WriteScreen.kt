@@ -226,7 +226,7 @@ fun WriteScreen(
                     modifier = Modifier.weight(1f),
                 )
                 if (dictation != null) MicButton(dictation)
-                IconAction(Glyph.Image, "Add photo", Color(0xFFC9CEDB), { addPhoto++ })
+                IconAction(Glyph.Image, "Add photo", JournalColors.Icon, { addPhoto++ })
                 if (keyboardOpen) {
                     Spacer(Modifier.width(4.dp))
                     TextButton(onClick = { focusManager.clearFocus(); keyboard?.hide() }) {
