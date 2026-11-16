@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.map
@@ -70,6 +71,18 @@ class EntriesViewModel(
         if (pending == null) list else list.filter { it.id != pending.id }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Today's date, updated when the clock passes midnight. The streak and the "Today" /
+     * "Yesterday" headers depend on it; without this, an app left open overnight (the
+     * desktop app especially) kept showing yesterday's streak.
+     */
+    private val today: Flow<LocalDate> = flow {
+        while (true) {
+            emit(localDate(nowMillis()))
+            delay(60_000)
+        }
+    }.distinctUntilChanged()
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query
 
@@ -90,7 +103,7 @@ class EntriesViewModel(
      * What the list shows: every entry grouped by the day it was written or, while
      * searching, the matches with the best one first.
      */
-    val sections: StateFlow<List<DaySection>> = combine(entries, wordHits) { list, hits ->
+    val sections: StateFlow<List<DaySection>> = combine(entries, wordHits, today) { list, hits, _ ->
         if (hits != null) {
             // Only entries that are still shown (not one waiting to be deleted).
             val shown = list.mapTo(HashSet<String>()) { it.id }
@@ -162,8 +175,7 @@ class EntriesViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MeaningSearch.Idle)
 
     /** Days in a row with at least one entry. */
-    val streak: StateFlow<Int> = entries
-        .map { list -> streakDays(list.map { localDate(it.createdAt) }.toSet(), localDate(nowMillis())) }
+    val streak: StateFlow<Int> = combine(entries, today) { list, day -> streakDays(list.map { localDate(it.createdAt) }.toSet(), day) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     val syncing: StateFlow<Boolean> = syncController.syncing
