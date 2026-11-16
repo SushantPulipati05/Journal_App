@@ -1,0 +1,5 @@
+# Files Claude creates for you (mockups, previews). Not part of the app.
+Claude outputs/
+
+# Temporary snapshots
+_server_snapshot.tgz
